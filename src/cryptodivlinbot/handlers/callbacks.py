@@ -62,6 +62,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             t("language_set", new_lang, lang=LANGUAGE_NAMES[new_lang]),
             reply_markup=keyboards.main_menu(new_lang, subscribed=chat.subscribed),
         )
+        # edit_message_text can't carry a ReplyKeyboardMarkup — send a tiny
+        # follow-up message so the persistent reply keyboard re-renders with
+        # labels in the new language.
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=t("language_set", new_lang, lang=LANGUAGE_NAMES[new_lang]),
+            reply_markup=keyboards.main_reply_keyboard(new_lang),
+        )
         return
 
     if data == keyboards.CB_SUBSCRIBE:

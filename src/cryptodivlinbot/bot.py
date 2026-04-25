@@ -26,6 +26,8 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 
 from .alerts import (
@@ -300,6 +302,12 @@ def _register_handlers(application: Application[Any, Any, Any, Any, Any, Any]) -
     application.add_handler(CommandHandler("setthreshold", cmd_handlers.setthreshold))
     application.add_handler(CommandHandler("ping", cmd_handlers.ping))
     application.add_handler(CallbackQueryHandler(cb_handlers.on_callback))
+    # Catch text messages that match a persistent reply-keyboard label and
+    # route them to the matching command handler. Plain chat messages fall
+    # through silently.
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_handlers.on_reply_button)
+    )
 
 
 async def _on_startup(application: Application[Any, Any, Any, Any, Any, Any]) -> None:

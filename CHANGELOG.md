@@ -184,3 +184,43 @@ implementing the bot. New entries should be appended at the bottom of
   `BotContext.build_digest_text`). 7 new unit tests in
   `tests/test_alerts.py::TestEscapeMd` cover the special-char set and
   the no-op case for plain alphanumerics + safe punctuation.
+
+### Persistent ReplyKeyboard (pinned at the bottom of the chat)
+- **`src/cryptodivlinbot/keyboards.py`**: new `main_reply_keyboard(language)`
+  factory returning `ReplyKeyboardMarkup(rows, resize_keyboard=True,
+  is_persistent=True)` — the buttons stay visible alongside the system
+  keyboard between messages, which is what the user asked for. Layout is
+  3 rows of two (`Subscribe / Unsubscribe`, `Status / Digest`,
+  `Coins / Language`) plus a final single `Help` row.
+  Also added `match_reply_button(text)` reverse-lookup that scans every
+  supported locale for a tap originating from a button, and a public
+  `REPLY_BUTTON_KEYS` tuple driving both the layout and the lookup.
+- **`src/cryptodivlinbot/handlers/commands.py`**:
+  - `/start` now attaches the persistent reply keyboard to the greeting
+    instead of the inline menu — `/menu` retains the inline flow.
+  - `/setlang <code>` re-sends the keyboard so the labels switch to the
+    new language immediately.
+  - new `on_reply_button` coroutine + `_REPLY_BUTTON_HANDLERS` mapping
+    that translates a tapped label back to the matching command handler
+    (subscribe, unsubscribe, status, digest, coins, language, help).
+  - imported `Awaitable` / `Callable` for a small `_CommandHandler`
+    type alias used by the dispatch table — keeps `mypy --strict` happy.
+- **`src/cryptodivlinbot/handlers/callbacks.py`**: after a successful
+  inline language change (`lang:<code>`), follow up with a fresh
+  `send_message` carrying `main_reply_keyboard(new_lang)` — Telegram's
+  `edit_message_text` cannot replace a `ReplyKeyboardMarkup`, so a
+  separate message is the only way to refresh the persistent keyboard.
+- **`src/cryptodivlinbot/bot.py`**: registered a
+  `MessageHandler(filters.TEXT & ~filters.COMMAND, on_reply_button)` so
+  taps on the reply keyboard get routed exactly like the equivalent
+  slash commands. Plain chat messages fall through silently.
+- **`tests/test_keyboards.py`**: 29 new tests — every locale × every
+  reply-button key round-trips through `match_reply_button`, the
+  keyboard always has `is_persistent=True` / `resize_keyboard=True`,
+  and the layout is locked at `[2, 2, 2, 1]`. Also covers the
+  `match_reply_button` no-op for ordinary text.
+- **`docs/USAGE_UK.md` / `docs/USAGE_RU.md`**: section §6 ("Кнопки")
+  rewritten — now explicitly distinguishes §6.1 the persistent
+  ReplyKeyboard from §6.2 the inline menu, lists the slash-command
+  equivalent for every reply button, and documents that the labels
+  auto-translate after `/setlang` or an inline language change.

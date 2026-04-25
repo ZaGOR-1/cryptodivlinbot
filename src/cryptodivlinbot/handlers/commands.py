@@ -8,6 +8,7 @@ to test.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, cast
 
 from telegram import Update
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
     from ..bot import BotContext
 
 logger = logging.getLogger(__name__)
+
+_CommandHandler = Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[None]]
 
 
 def _ctx(context: ContextTypes.DEFAULT_TYPE) -> BotContext:
@@ -59,9 +62,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         window=bot_ctx.settings.spike_window_min,
         digest=bot_ctx.settings.digest_interval_min,
     )
+    # Persistent ReplyKeyboard pinned at the bottom of the chat — the user
+    # asked for buttons that stay in place between messages. The inline
+    # menu remains available via /menu for the collapsible flow.
     await update.effective_message.reply_text(
         text,
-        reply_markup=keyboards.main_menu(chat.language, subscribed=chat.subscribed),
+        reply_markup=keyboards.main_reply_keyboard(chat.language),
     )
 
 
@@ -185,8 +191,10 @@ async def setlang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.effective_message.reply_text(t("bad_language", chat.language))
         return
     bot_ctx.state.set_language(chat.chat_id, code)
+    # Refresh the persistent ReplyKeyboard so the labels switch language too.
     await update.effective_message.reply_text(
-        t("language_set", code, lang=LANGUAGE_NAMES[code])
+        t("language_set", code, lang=LANGUAGE_NAMES[code]),
+        reply_markup=keyboards.main_reply_keyboard(code),
     )
 
 
@@ -218,3 +226,37 @@ async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if chat is None or update.effective_message is None:
         return
     await update.effective_message.reply_text(t("pong", chat.language))
+
+
+# Reverse mapping: persistent reply-button key → command handler.
+# Telegram delivers a tap on a reply button as an ordinary text message, so we
+# look up the canonical key via :func:`keyboards.match_reply_button` and
+# dispatch to the same coroutine the slash command would.
+_REPLY_BUTTON_HANDLERS: dict[str, _CommandHandler] = {
+    "btn_subscribe": subscribe,
+    "btn_unsubscribe": unsubscribe,
+    "btn_status": status,
+    "btn_digest": digest,
+    "btn_coins": coins,
+    "btn_language": language,
+    "btn_help": help_cmd,
+}
+
+
+async def on_reply_button(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Route a tap on the persistent reply keyboard to the matching command.
+
+    Falls through silently for ordinary text messages (no match) so the user
+    can still chat with the bot without every message firing a handler.
+    """
+    if update.effective_message is None or update.effective_message.text is None:
+        return
+    key = keyboards.match_reply_button(update.effective_message.text)
+    if key is None:
+        return
+    handler = _REPLY_BUTTON_HANDLERS.get(key)
+    if handler is None:  # pragma: no cover - defensive: keys are static
+        return
+    await handler(update, context)
