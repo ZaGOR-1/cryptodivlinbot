@@ -213,12 +213,18 @@ SELECT coin_id, COUNT(*) FROM price_history GROUP BY coin_id;
 # Линт
 python -m ruff check .
 
+# Проверка типов (--strict)
+python -m mypy src/cryptodivlinbot
+
 # Тесты
 python -m pytest -q
 ```
 
 Все модули покрыты тестами: `alerts`, `i18n`, `state`, `market_data`,
-`config`, `_safe_send`.
+`config`, `_safe_send`. Весь пакет проходит `mypy --strict` —
+конфигурация в `pyproject.toml`, секция `[tool.mypy]`. Если меняешь
+типизацию — запускай те же три команды локально перед пушем — это
+ровно то, что CI делает на каждый PR.
 
 ---
 
@@ -333,9 +339,13 @@ Job `lint-and-test` выполняет по порядку:
    (ключ — хэш `pyproject.toml`, поэтому установка зависимостей в
    последующих ранах обычно занимает секунды).
 3. `pip install -e '.[dev]'` — пакет в editable-режиме + dev-экстра
-   (`pytest`, `pytest-asyncio`, `ruff`).
+   (`pytest`, `pytest-asyncio`, `ruff`, `mypy`).
 4. `python -m ruff check .` — линтер.
-5. `python -m pytest -q` — весь тестовый пакет (56 тестов).
+5. `python -m mypy src/cryptodivlinbot` — типы в режиме `--strict`
+   (конфиг в `pyproject.toml`, секция `[tool.mypy]`). Если в коде
+   появляется `Any`, пропадает аннотация или появляется
+   неиспользуемый `# type: ignore` — пайплайн упадёт.
+6. `python -m pytest -q` — весь тестовый пакет (56 тестов).
 
 Job запускается на матрице **Python 3.11** и **Python 3.12** с
 `fail-fast: false` — если одна версия падает, вторая всё равно
@@ -362,10 +372,11 @@ Job запускается на матрице **Python 3.11** и **Python 3.12*
 ```bash
 pip install -e '.[dev]'
 python -m ruff check .
+python -m mypy src/cryptodivlinbot
 python -m pytest -q
 ```
 
-Если эти три команды зелёные локально, CI будет зелёным.
+Если все четыре команды зелёные локально, CI будет зелёным.
 
 ### 12.5. Permissions
 

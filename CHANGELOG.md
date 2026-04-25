@@ -139,3 +139,34 @@ implementing the bot. New entries should be appended at the bottom of
   without compose, and a Docker-specific troubleshooting table. Roadmap
   updated to mark Docker as done; section numbering shifted accordingly
   (CI section moved to §12, "Що далі" / "Что дальше" to §13).
+
+### Type Safety (`mypy --strict`)
+- **`pyproject.toml`**: added `mypy>=1.11,<2.0` to the `dev` extra and a
+  new `[tool.mypy]` section that enables `strict = true`,
+  `warn_unused_ignores`, `warn_redundant_casts`, `warn_unreachable`,
+  `show_error_codes`, and `pretty`. Targets `src/cryptodivlinbot`.
+- **`.github/workflows/ci.yml`**: added a `Mypy (--strict)` step between
+  `Ruff` and `Pytest`. The whole pipeline is now lint → mypy → tests on
+  the Python 3.11 / 3.12 matrix.
+- **`src/cryptodivlinbot/bot.py`**: parameterised every `Application`
+  with the six-tuple of generic types it actually exposes
+  (`Application[Any, Any, Any, Any, Any, Any]`); replaced the
+  `# type: ignore` in `_on_shutdown` with a proper `cast` to
+  `BotContext | None`; rewrote the `digest_job` closure to narrow
+  `bot_ctx.build_digest_text()` (which returns `str | None`) once before
+  capturing it as a `str` default in the inner `_send` and `_on_forbidden`
+  callbacks (mypy can't infer the captured-default type otherwise).
+- **`src/cryptodivlinbot/handlers/commands.py` &
+  `…/handlers/callbacks.py`**: `_ctx()` now `cast`s the result of
+  `application.bot_data.get("bot_context")` to `BotContext` (the dict
+  is `dict[str, Any]`, so without the cast mypy reports `no-any-return`).
+  Renamed the local `text` variable in the `CB_DIGEST` branch to
+  `digest_text` to keep its narrowed `str` type — the previous name
+  shadowed the surrounding `str` parameter.
+- **`…/handlers/callbacks.py::_safe_edit`**: now fully annotated
+  (`query: CallbackQuery`, `reply_markup: InlineKeyboardMarkup | None`,
+  `parse_mode: str | None`).
+- **`README.md`**: added `mypy src/cryptodivlinbot` to the Development
+  recipe and to the CI section.
+- **`docs/USAGE_UK.md` / `docs/USAGE_RU.md`**: documented the mypy step
+  in the local-development instructions and in the CI section.

@@ -14,6 +14,7 @@ dev = [
     "pytest>=8.0.0,<9.0.0",
     "pytest-asyncio>=0.23.0,<0.24.0",
     "ruff>=0.6.0,<0.7.0",
+    "mypy>=1.11.0,<2.0.0",
 ]
 
 [project.scripts]
@@ -37,3 +38,23 @@ select = ["E", "F", "W", "I", "B", "UP"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src/cryptodivlinbot"]
+# python-telegram-bot ships type info for most of its API but a few private
+# helpers we touch are loosely typed; allow those targeted ignores rather than
+# globally disabling strict mode.
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+show_error_codes = true
+pretty = true
+
+[[tool.mypy.overrides]]
+# httpx's transport types include some Any-returning protocols; we already
+# confine that to market_data.py and don't propagate it.
+module = "cryptodivlinbot.market_data"
+disallow_any_decorated = false
+

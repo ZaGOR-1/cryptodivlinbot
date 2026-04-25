@@ -6,9 +6,9 @@ operate the bot purely via the keyboard.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from telegram import Update
+from telegram import CallbackQuery, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
@@ -23,10 +23,12 @@ logger = logging.getLogger(__name__)
 
 
 def _ctx(context: ContextTypes.DEFAULT_TYPE) -> BotContext:
+    from ..bot import BotContext as _BotContext  # local import to avoid cycle at runtime
+
     bot_ctx = context.application.bot_data.get("bot_context")
     if bot_ctx is None:  # pragma: no cover - defensive
         raise RuntimeError("BotContext is not initialized in application.bot_data")
-    return bot_ctx
+    return cast(_BotContext, bot_ctx)
 
 
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -125,8 +127,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     if data == keyboards.CB_DIGEST:
-        text = bot_ctx.build_digest_text(chat.language)
-        if text is None:
+        digest_text = bot_ctx.build_digest_text(chat.language)
+        if digest_text is None:
             await _safe_edit(
                 query,
                 t("digest_empty", chat.language),
@@ -135,7 +137,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         await _safe_edit(
             query,
-            text,
+            digest_text,
             reply_markup=keyboards.back_only(chat.language),
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -173,7 +175,13 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     logger.debug("Unknown callback data: %r", data)
 
 
-async def _safe_edit(query, text: str, *, reply_markup=None, parse_mode=None) -> None:
+async def _safe_edit(
+    query: CallbackQuery,
+    text: str,
+    *,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    parse_mode: str | None = None,
+) -> None:
     """Edit the message in place, swallowing the 'Message is not modified' error."""
     try:
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)

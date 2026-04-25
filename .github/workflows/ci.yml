@@ -41,5 +41,8 @@ jobs:
       - name: Ruff (lint)
         run: python -m ruff check .
 
+      - name: Mypy (--strict)
+        run: python -m mypy src/cryptodivlinbot
+
       - name: Pytest
         run: python -m pytest -q
