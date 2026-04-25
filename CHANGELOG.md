@@ -84,3 +84,12 @@ implementing the bot. New entries should be appended at the bottom of
   перегляд SQLite), розробка / тести, troubleshooting та плани розвитку.
 - **`docs/USAGE_RU.md`**: то же самое на русском, со зеркальной структурой.
 - **`README.md`**: link to both localized usage guides at the top.
+
+### Fixed (post-merge follow-up)
+- **`_safe_send` swallowed `Forbidden` raised on the retry path**: in the
+  inner `try/except` of the `RetryAfter` branch, `Forbidden` was caught by
+  the generic `except TelegramError` clause and the `on_forbidden` callback
+  (auto-unsubscribe) never ran. The retry path now catches `Forbidden`
+  explicitly *before* the generic `TelegramError` handler, mirroring the
+  outer `try/except`. Added a regression test
+  `test_invokes_on_forbidden_callback_when_retry_hits_forbidden`.

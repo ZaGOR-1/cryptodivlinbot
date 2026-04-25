@@ -123,6 +123,14 @@ async def _safe_send(
         try:
             await send()
             return True
+        except Forbidden as exc2:
+            # Forbidden is a TelegramError subclass — handle it explicitly so the
+            # on_forbidden callback (auto-unsubscribe) runs even when the chat
+            # blocks us between the rate-limit and the retry.
+            logger.info("Bot blocked or kicked from chat %s on retry: %s", chat_id, exc2)
+            if on_forbidden is not None:
+                on_forbidden()
+            return False
         except TelegramError as exc2:
             logger.warning("send failed after retry to chat %s: %s", chat_id, exc2)
             return False
