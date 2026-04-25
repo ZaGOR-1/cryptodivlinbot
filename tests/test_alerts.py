@@ -5,6 +5,7 @@ import pytest
 
 from cryptodivlinbot.alerts import (
     detect_spike,
+    escape_md,
     format_price,
     format_signed_pct,
     is_within_cooldown,
@@ -102,3 +103,23 @@ class TestFormatters:
         assert format_signed_pct(0.0) == "+0.00%"
         assert format_signed_pct(2.345) == "+2.35%"
         assert format_signed_pct(-1.2) == "-1.20%"
+
+
+class TestEscapeMd:
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("BTC", "BTC"),  # plain alphanum is untouched
+            ("WETH_ETH", r"WETH\_ETH"),  # underscore — the prod failure mode
+            ("FOO*BAR", r"FOO\*BAR"),  # asterisk — would open a stray bold
+            ("a`b", r"a\`b"),  # backtick — code span
+            ("see [name](url)", r"see \[name](url)"),  # link bracket
+            ("mix _of_ *all*`x`[", r"mix \_of\_ \*all\*\`x\`\["),
+        ],
+    )
+    def test_escape_md(self, value, expected):
+        assert escape_md(value) == expected
+
+    def test_escape_md_does_not_touch_safe_chars(self):
+        # Punctuation, digits, currency, hyphens, periods — all fine.
+        assert escape_md("BTC-USD 1,234.50 (+2.5%)") == "BTC-USD 1,234.50 (+2.5%)"
