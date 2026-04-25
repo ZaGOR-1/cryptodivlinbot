@@ -100,3 +100,26 @@ def format_signed_pct(pct: float | None) -> str:
         return "n/a"
     sign = "+" if pct >= 0 else ""
     return f"{sign}{pct:.2f}%"
+
+
+# Characters that are special in Telegram's *legacy* Markdown parse mode.
+# We escape them in dynamic values (coin symbols and names) before
+# interpolating into a `parse_mode=Markdown` message — otherwise a coin
+# whose name contains an underscore (e.g. "wormhole_eth") or asterisk
+# silently breaks the whole message:
+#     "Can't parse entities: can't find end of the entity ..."
+_MD_SPECIAL_CHARS = ("_", "*", "`", "[")
+
+
+def escape_md(value: str) -> str:
+    """Backslash-escape Telegram legacy-Markdown special characters in ``value``.
+
+    Apply to user-facing dynamic content (coin symbol, coin name) before
+    passing it into a template that will be sent with
+    ``ParseMode.MARKDOWN``. Idempotency is *not* guaranteed: do not call
+    this twice on the same string.
+    """
+    out = value
+    for ch in _MD_SPECIAL_CHARS:
+        out = out.replace(ch, "\\" + ch)
+    return out

@@ -170,3 +170,17 @@ implementing the bot. New entries should be appended at the bottom of
   recipe and to the CI section.
 - **`docs/USAGE_UK.md` / `docs/USAGE_RU.md`**: documented the mypy step
   in the local-development instructions and in the CI section.
+
+### Fixed
+- **Markdown parse failure in spike alerts and digest** (reported live:
+  `Can't parse entities: can't find end of the entity starting at byte
+  offset 383`). Coin symbols/names that contain `_`, `*`, `` ` ``, or
+  `[` (e.g. `WETH_ETH`, `FOO*`) opened an unbalanced Markdown entity in
+  the formatted message, causing Telegram to reject the *whole* digest
+  or alert. Added a small `escape_md()` helper in
+  `src/cryptodivlinbot/alerts.py` and applied it to `symbol` / `name`
+  before they get interpolated into any template sent with
+  `parse_mode=ParseMode.MARKDOWN` (`_dispatch_spike` and
+  `BotContext.build_digest_text`). 7 new unit tests in
+  `tests/test_alerts.py::TestEscapeMd` cover the special-char set and
+  the no-op case for plain alphanumerics + safe punctuation.

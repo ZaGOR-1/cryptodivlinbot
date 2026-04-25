@@ -31,6 +31,7 @@ from telegram.ext import (
 from .alerts import (
     SpikeEvent,
     detect_spike,
+    escape_md,
     format_price,
     format_signed_pct,
     is_within_cooldown,
@@ -92,7 +93,10 @@ class BotContext:
                 t(
                     "digest_line",
                     language,
-                    symbol=row["symbol"],
+                    # Symbol is interpolated into a Markdown-parsed message;
+                    # escape special chars in case CoinGecko returns one
+                    # like "WETH_ETH" or "FOO*".
+                    symbol=escape_md(str(row["symbol"])),
                     price=format_price(float(row["last_price"])),
                     pct_str=format_signed_pct(pct_window),
                     window=self.settings.spike_window_min,
@@ -227,8 +231,11 @@ async def _dispatch_spike(
     text = t(
         key,
         language,
-        symbol=snap.symbol,
-        name=snap.name,
+        # symbol/name go inside *bold* markup, so we must escape any
+        # `_`, `*`, `` ` ``, `[` they contain — otherwise an unbalanced
+        # entity breaks the entire message.
+        symbol=escape_md(snap.symbol),
+        name=escape_md(snap.name),
         pct=abs(event.pct_change),
         window=bot_ctx.settings.spike_window_min,
         price=format_price(snap.price_usd),
