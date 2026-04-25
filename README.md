@@ -1,5 +1,7 @@
 # cryptodivlinbot
 
+[![CI](https://github.com/ZaGOR-1/cryptodivlinbot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ZaGOR-1/cryptodivlinbot/actions/workflows/ci.yml)
+
 A Telegram bot that tracks the top-N cryptocurrencies by market cap, alerts
 subscribed chats when a coin's price moves more than a configurable percent
 within a short window, and broadcasts a regular digest of where the market
@@ -115,6 +117,24 @@ pip install -e .[dev]
 ruff check .
 pytest -q
 ```
+
+## Continuous Integration
+
+Every push to `main` and every pull request runs
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml). The workflow:
+
+1. Checks out the repo.
+2. Spins up a matrix of **Python 3.11** and **Python 3.12** on Ubuntu.
+3. Installs the package with the `dev` extras (`pip install -e '.[dev]'`),
+   using GitHub's pip cache keyed on `pyproject.toml`.
+4. Runs `python -m ruff check .` (lint).
+5. Runs `python -m pytest -q` (the full 56-test suite).
+
+A green check on the PR means **both** Python versions passed lint and
+tests. The matrix is `fail-fast: false`, so if one version fails the other
+still finishes — that makes diagnosing version-specific issues easier.
+
+The badge at the top of this README links straight to the latest run.
 
 ## License
 
