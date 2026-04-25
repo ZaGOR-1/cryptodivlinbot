@@ -1,0 +1,40 @@
+# Run the bot in production with `docker compose up -d`.
+# State (SQLite DB) persists in the named volume `cryptodivlinbot_data`.
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cryptodivlinbot:latest
+    container_name: cryptodivlinbot
+    restart: unless-stopped
+    # Pull config from a `.env` file next to this compose file.
+    # Required: TELEGRAM_BOT_TOKEN. All other vars have sensible defaults.
+    env_file:
+      - .env
+    environment:
+      # Pin the DB path inside the container; must match the mount below.
+      DB_PATH: /data/cryptodivlinbot.sqlite
+    volumes:
+      - cryptodivlinbot_data:/data
+    # Honour the HEALTHCHECK declared in the Dockerfile.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import cryptodivlinbot, cryptodivlinbot.config"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # Conservative resource caps; tune for your host.
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  cryptodivlinbot_data:
+    name: cryptodivlinbot_data

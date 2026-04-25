@@ -110,3 +110,32 @@ implementing the bot. New entries should be appended at the bottom of
   step-by-step description of the pipeline, how concurrency works, how to
   read the result on a PR, how to run the same checks locally, and the
   permissions model. Roadmap section updated to mark CI as done.
+
+### Docker / Deployment
+- **`Dockerfile`**: multi-stage build. Stage 1 (`builder`) starts from
+  `python:3.12-slim`, installs `build-essential`, creates a venv at
+  `/opt/venv`, then installs the project (and only its runtime
+  dependencies — `pytest` / `ruff` are not in the runtime image). Stage 2
+  (`runtime`) is a clean `python:3.12-slim` that copies the venv from the
+  builder, creates an unprivileged `app:app` user/group, declares
+  `VOLUME /data`, and runs `python -m cryptodivlinbot` as that user. A
+  `HEALTHCHECK` runs `python -c "import cryptodivlinbot, cryptodivlinbot.config"`
+  every 30 s. Final image size ≈ 134 MB.
+- **`.dockerignore`**: excludes `.git`, `.venv`, caches, `*.sqlite`,
+  `.env*` (except `.env.example`), `docs/`, `tests/` and `CHANGELOG.md`
+  from the build context — both for speed and to keep secrets out.
+- **`docker-compose.yml`**: production-grade defaults — `restart:
+  unless-stopped`, `env_file: .env`, `cryptodivlinbot_data` named volume
+  mounted at `/data`, `DB_PATH` pinned to that volume, memory cap of 256
+  MB, and `json-file` log rotation (10 MB × 5 files). Echoes the
+  Dockerfile `HEALTHCHECK` so `docker compose ps` shows
+  healthy/unhealthy.
+- **`README.md`**: new "Run with Docker" section with quick-start
+  commands.
+- **`docs/USAGE_UK.md` / `docs/USAGE_RU.md`**: new section "Запуск через
+  Docker" — quick start, what each stage of the Dockerfile does, every
+  setting in `docker-compose.yml` explained, useful operational commands
+  (`logs`, `restart`, `down`, `down -v`, `exec`), how to test the image
+  without compose, and a Docker-specific troubleshooting table. Roadmap
+  updated to mark Docker as done; section numbering shifted accordingly
+  (CI section moved to §12, "Що далі" / "Что дальше" to §13).

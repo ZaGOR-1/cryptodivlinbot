@@ -118,6 +118,34 @@ ruff check .
 pytest -q
 ```
 
+## Run with Docker
+
+The repo ships a multi-stage [`Dockerfile`](./Dockerfile) and a
+[`docker-compose.yml`](./docker-compose.yml) for production deploys:
+
+```bash
+cp .env.example .env             # then edit .env and set TELEGRAM_BOT_TOKEN
+docker compose up -d --build
+docker compose logs -f bot       # tail logs
+```
+
+State (the SQLite DB) lives in the named volume `cryptodivlinbot_data`, so
+container restarts do not lose subscriptions or price history. The image
+runs as an unprivileged `app` user, declares a lightweight `HEALTHCHECK`,
+caps memory at 256 MB by default, and rotates JSON logs (10 MB × 5 files).
+
+To stop and remove the container (volume kept):
+
+```bash
+docker compose down
+```
+
+To wipe state too:
+
+```bash
+docker compose down -v
+```
+
 ## Continuous Integration
 
 Every push to `main` and every pull request runs
