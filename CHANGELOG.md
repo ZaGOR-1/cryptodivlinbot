@@ -75,3 +75,12 @@ implementing the bot. New entries should be appended at the bottom of
   the configured `ALERT_COOLDOWN_MIN` (default 15 min).
 - New unit tests in `tests/test_safe_send.py` cover the success, retry,
   forbidden-callback, timeout, and generic-error branches of `_safe_send`.
+
+### Documentation
+- **`docs/USAGE_UK.md`**: повна україномовна інструкція — встановлення,
+  створення Telegram-бота через `@BotFather`, налаштування `.env`, повний
+  довідник параметрів, команд та кнопок, опис того, як працюють
+  spike-алерти і дайджест, типові задачі (зміна порога, перемикання мови,
+  перегляд SQLite), розробка / тести, troubleshooting та плани розвитку.
+- **`docs/USAGE_RU.md`**: то же самое на русском, со зеркальной структурой.
+- **`README.md`**: link to both localized usage guides at the top.
