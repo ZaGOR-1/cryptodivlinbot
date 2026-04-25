@@ -1,12 +1,19 @@
-"""Inline keyboard factories.
+"""Keyboard factories — both inline (per-message) and reply (persistent at the
+bottom of the chat).
 
-Callback data follows ``"<scope>:<action>[:<arg>]"`` so callbacks.py can dispatch
-with a single split.
+Inline callback data follows ``"<scope>:<action>[:<arg>]"`` so callbacks.py can
+dispatch with a single split.
 """
 from __future__ import annotations
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
+from .config import SUPPORTED_LANGUAGES
 from .i18n import LANGUAGE_FLAGS, LANGUAGE_NAMES, t
 
 CB_SUBSCRIBE = "menu:subscribe"
@@ -65,3 +72,59 @@ def back_only(language: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(t("btn_back", language), callback_data=CB_BACK)]]
     )
+
+
+# ----------------------------------------------------------------------
+# Persistent reply keyboard (pinned at the bottom of the Telegram chat)
+# ----------------------------------------------------------------------
+# Keys whose translation is shown on the persistent reply keyboard. Order is
+# significant — it drives both the displayed layout (3×2 grid + extras) and the
+# reverse lookup used by :func:`match_reply_button`.
+REPLY_BUTTON_KEYS: tuple[str, ...] = (
+    "btn_subscribe",
+    "btn_unsubscribe",
+    "btn_status",
+    "btn_digest",
+    "btn_coins",
+    "btn_language",
+    "btn_help",
+)
+
+
+def main_reply_keyboard(language: str) -> ReplyKeyboardMarkup:
+    """Return a persistent reply keyboard with the most-used actions.
+
+    ``is_persistent=True`` keeps it visible alongside the system keyboard;
+    ``resize_keyboard=True`` auto-fits the rows to the device width.
+    """
+    rows = [
+        [
+            KeyboardButton(t("btn_subscribe", language)),
+            KeyboardButton(t("btn_unsubscribe", language)),
+        ],
+        [
+            KeyboardButton(t("btn_status", language)),
+            KeyboardButton(t("btn_digest", language)),
+        ],
+        [
+            KeyboardButton(t("btn_coins", language)),
+            KeyboardButton(t("btn_language", language)),
+        ],
+        [KeyboardButton(t("btn_help", language))],
+    ]
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
+
+
+def match_reply_button(text: str) -> str | None:
+    """Reverse-map a tapped reply-button label back to its canonical key.
+
+    The bot has no way of knowing which language a tapped label came from
+    (Telegram delivers a plain text message), so we scan all supported locales
+    and return the matching ``btn_*`` key, or ``None`` if the text is just an
+    ordinary user message.
+    """
+    for code in SUPPORTED_LANGUAGES:
+        for key in REPLY_BUTTON_KEYS:
+            if t(key, code) == text:
+                return key
+    return None
