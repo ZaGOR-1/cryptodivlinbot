@@ -115,8 +115,13 @@ tests/                     # pytest suite
 ```bash
 pip install -e .[dev]
 ruff check .
+mypy src/cryptodivlinbot
 pytest -q
 ```
+
+The codebase passes `mypy --strict`. The configuration lives in
+`pyproject.toml` under `[tool.mypy]` (`strict = true`,
+`warn_unused_ignores`, `warn_unreachable`, etc.).
 
 ## Run with Docker
 
@@ -156,7 +161,9 @@ Every push to `main` and every pull request runs
 3. Installs the package with the `dev` extras (`pip install -e '.[dev]'`),
    using GitHub's pip cache keyed on `pyproject.toml`.
 4. Runs `python -m ruff check .` (lint).
-5. Runs `python -m pytest -q` (the full 56-test suite).
+5. Runs `python -m mypy src/cryptodivlinbot` (`--strict` via
+   `pyproject.toml`).
+6. Runs `python -m pytest -q` (the full 56-test suite).
 
 A green check on the PR means **both** Python versions passed lint and
 tests. The matrix is `fail-fast: false`, so if one version fails the other

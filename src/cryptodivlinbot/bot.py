@@ -15,6 +15,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Any, cast
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -253,28 +254,32 @@ async def digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     for chat in chats:
-        text = bot_ctx.build_digest_text(chat.language)
-        if text is None:
+        maybe_text = bot_ctx.build_digest_text(chat.language)
+        if maybe_text is None:
             continue
+        digest_text: str = maybe_text  # narrow once for the closures below.
 
-        async def _send(text: str = text, chat_id: int = chat.chat_id) -> None:
+        async def _send(
+            digest_text: str = digest_text, chat_id: int = chat.chat_id
+        ) -> None:
             await context.bot.send_message(
-                chat_id=chat_id, text=text, parse_mode=ParseMode.MARKDOWN
+                chat_id=chat_id, text=digest_text, parse_mode=ParseMode.MARKDOWN
             )
+
+        def _on_forbidden(chat_id: int = chat.chat_id) -> None:
+            bot_ctx.state.set_subscribed(chat_id, False)
 
         await _safe_send(
             _send,
             chat_id=chat.chat_id,
-            on_forbidden=lambda chat_id=chat.chat_id: bot_ctx.state.set_subscribed(
-                chat_id, False
-            ),
+            on_forbidden=_on_forbidden,
         )
 
 
 # ----------------------------------------------------------------------
 # Wiring
 # ----------------------------------------------------------------------
-def _register_handlers(application: Application) -> None:
+def _register_handlers(application: Application[Any, Any, Any, Any, Any, Any]) -> None:
     application.add_handler(CommandHandler("start", cmd_handlers.start))
     application.add_handler(CommandHandler("menu", cmd_handlers.menu))
     application.add_handler(CommandHandler("help", cmd_handlers.help_cmd))
@@ -290,7 +295,7 @@ def _register_handlers(application: Application) -> None:
     application.add_handler(CallbackQueryHandler(cb_handlers.on_callback))
 
 
-async def _on_startup(application: Application) -> None:
+async def _on_startup(application: Application[Any, Any, Any, Any, Any, Any]) -> None:
     bot_ctx: BotContext = application.bot_data["bot_context"]
     settings = bot_ctx.settings
     jq = application.job_queue
@@ -319,8 +324,8 @@ async def _on_startup(application: Application) -> None:
     )
 
 
-async def _on_shutdown(application: Application) -> None:
-    bot_ctx: BotContext = application.bot_data.get("bot_context")  # type: ignore[assignment]
+async def _on_shutdown(application: Application[Any, Any, Any, Any, Any, Any]) -> None:
+    bot_ctx = cast("BotContext | None", application.bot_data.get("bot_context"))
     if bot_ctx is None:
         return
     try:
@@ -333,7 +338,9 @@ async def _on_shutdown(application: Application) -> None:
         logger.exception("Error closing state")
 
 
-def build_application(settings: Settings | None = None) -> Application:
+def build_application(
+    settings: Settings | None = None,
+) -> Application[Any, Any, Any, Any, Any, Any]:
     """Construct (but do not start) the configured :class:`Application`."""
     settings = settings or Settings.from_env()
     state = State(settings.db_path)

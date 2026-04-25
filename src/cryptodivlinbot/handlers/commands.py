@@ -8,7 +8,7 @@ to test.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -28,10 +28,12 @@ logger = logging.getLogger(__name__)
 
 def _ctx(context: ContextTypes.DEFAULT_TYPE) -> BotContext:
     """Pull the shared :class:`BotContext` out of ``application.bot_data``."""
+    from ..bot import BotContext as _BotContext  # local import to avoid cycle at runtime
+
     bot_ctx = context.application.bot_data.get("bot_context")
     if bot_ctx is None:  # pragma: no cover - defensive
         raise RuntimeError("BotContext is not initialized in application.bot_data")
-    return bot_ctx
+    return cast(_BotContext, bot_ctx)
 
 
 def _resolve_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> ChatPrefs | None:
