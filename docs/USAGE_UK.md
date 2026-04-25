@@ -231,7 +231,89 @@ python -m pytest -q
 
 ---
 
-## 11. Безперервна інтеграція (GitHub Actions CI)
+## 11. Запуск через Docker
+
+У репо є multi-stage [`Dockerfile`](../Dockerfile) і
+[`docker-compose.yml`](../docker-compose.yml) для продакшен-деплою.
+
+### 11.1. Швидкий старт
+
+```bash
+cp .env.example .env             # відкрий .env і встав TELEGRAM_BOT_TOKEN
+docker compose up -d --build     # збере образ і запустить у фоні
+docker compose logs -f bot       # подивитись лог у реальному часі
+```
+
+Все. Бот вже працює.
+
+### 11.2. Що всередині
+
+- **Stage 1 (`builder`)**: `python:3.12-slim`, ставить `build-essential` і
+  створює venv у `/opt/venv` з усіма runtime-залежностями (без `pytest`,
+  `ruff` тощо — тільки те, що потрібно в проді).
+- **Stage 2 (`runtime`)**: чистий `python:3.12-slim`, копіює venv з
+  builder, створює непривілейованого користувача `app`, працює від нього.
+  Це дрібний нюанс, але важливий для security: контейнер не зможе
+  перезаписати `/etc` чи `/usr` навіть якщо в ньому щось зламають.
+- **Розмір**: ~134 МБ (більшість — це сам Python).
+- **HEALTHCHECK**: запускає `python -c "import cryptodivlinbot, cryptodivlinbot.config"`
+  кожні 30 с. Якщо процес жорстко зависне, оркестратор (Docker /
+  Kubernetes) побачить `unhealthy` і перезапустить.
+
+### 11.3. Що задано в `docker-compose.yml`
+
+- `restart: unless-stopped` — автоматичний рестарт при падінні / ребуті
+  хоста.
+- `env_file: .env` — токен і всі параметри підвантажуються з `.env`
+  поряд з `docker-compose.yml`.
+- `volumes: cryptodivlinbot_data:/data` — SQLite живе у named volume,
+  тож `docker compose down && docker compose up` не губить підписки.
+- `deploy.resources.limits.memory: 256M` — обмеження пам'яті. Бот легко
+  вкладається в 50 МБ; ліміт є на випадок витоку.
+- `logging: json-file` з ротацією 10 МБ × 5 файлів — диск не
+  заллється навіть якщо бот лежить тижнями.
+
+### 11.4. Корисні команди
+
+```bash
+docker compose ps                # статус контейнера + healthcheck
+docker compose logs -f --tail 100 bot
+docker compose restart bot       # рестарт без перезбору образу
+docker compose pull && docker compose up -d --build   # оновлення
+docker compose down              # зупинити (volume залишається)
+docker compose down -v           # зупинити + видалити volume (зітре БД!)
+
+# Зайти в контейнер для дебагу:
+docker compose exec bot bash     # ні, у slim немає bash, ось правильний варіант:
+docker compose exec bot python -c "import cryptodivlinbot.config as c; print(c.Settings.from_env())"
+
+# Подивитись що в БД:
+docker run --rm -v cryptodivlinbot_data:/data alpine sh -c "ls -la /data && wc -c /data/*.sqlite"
+```
+
+### 11.5. Тестування образу без compose
+
+```bash
+docker build -t cryptodivlinbot:test .
+docker run --rm -e TELEGRAM_BOT_TOKEN=fake cryptodivlinbot:test \
+  python -c "from cryptodivlinbot.bot import build_application; \
+             app = build_application(); print('handlers:', sum(len(h) for h in app.handlers.values()))"
+```
+
+Якщо вивело `handlers: 13` — образ робочий.
+
+### 11.6. Troubleshooting
+
+| Проблема | Що робити |
+| --- | --- |
+| `TELEGRAM_BOT_TOKEN is required` | Не створив `.env` поряд з `docker-compose.yml` або не вписав туди токен. |
+| Контейнер у статусі `unhealthy` | `docker compose logs bot` — швидше за все `Unauthorized` (поганий токен) або немає інтернету. |
+| `permission denied` на volume | На SELinux-системах: `chcon -Rt svirt_sandbox_file_t ./data` або додай `:Z` у volume mount. |
+| Хочу побачити, що збилось | `docker compose build --progress=plain --no-cache .` для повного логу. |
+
+---
+
+## 12. Безперервна інтеграція (GitHub Actions CI)
 
 Файл [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) автоматично
 запускається на:
@@ -290,13 +372,14 @@ python -m pytest -q
 
 ---
 
-## 12. Що далі (плани розвитку)
+## 13. Що далі (плани розвитку)
 
 Цей бот — повноцінний MVP. Природні наступні кроки:
 
 - ✅ ~~CI на GitHub Actions (ruff + pytest на кожен PR)~~ — реалізовано в
+  розділі 12.
+- ✅ ~~Dockerfile / `docker-compose.yml` для деплою~~ — реалізовано в
   розділі 11.
-- Dockerfile / `docker-compose.yml` для деплою.
 - Команди `/mute <coin>` і `/topmovers`.
 - Налаштовуваний список монет (не тільки топ-N).
 - Налаштовуваний формат сповіщень (HTML, MarkdownV2).
