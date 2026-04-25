@@ -75,6 +75,34 @@ class TestSafeSend:
         assert triggered == [1]
 
     @pytest.mark.asyncio
+    async def test_invokes_on_forbidden_callback_when_retry_hits_forbidden(
+        self, monkeypatch
+    ):
+        """RetryAfter → retry that gets Forbidden must still unsubscribe the chat."""
+
+        async def fake_sleep(_):
+            return None
+
+        monkeypatch.setattr("cryptodivlinbot.bot.asyncio.sleep", fake_sleep)
+
+        triggered: list[int] = []
+
+        calls = 0
+
+        async def send():
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RetryAfter(0.01)
+            raise Forbidden("blocked between attempts")
+
+        result = await _safe_send(
+            send, chat_id=99, on_forbidden=lambda: triggered.append(1)
+        )
+        assert result is False
+        assert triggered == [1]
+
+    @pytest.mark.asyncio
     async def test_returns_false_on_timeout(self):
         async def send():
             raise TimedOut("slow")
