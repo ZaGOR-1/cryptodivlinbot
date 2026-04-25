@@ -93,3 +93,20 @@ implementing the bot. New entries should be appended at the bottom of
   explicitly *before* the generic `TelegramError` handler, mirroring the
   outer `try/except`. Added a regression test
   `test_invokes_on_forbidden_callback_when_retry_hits_forbidden`.
+
+### CI / Tooling
+- **`.github/workflows/ci.yml`**: GitHub Actions pipeline that runs on every
+  pull request and every push to `main`. Single `lint-and-test` job runs on
+  a Python `3.11` / `3.12` matrix (`fail-fast: false`), uses the official
+  pip cache keyed on `pyproject.toml`, installs the package with the `dev`
+  extras, then runs `ruff check .` and `pytest -q`. Concurrency is scoped
+  per `(workflow, ref)` with `cancel-in-progress: true` so older runs on
+  the same PR are auto-cancelled. Workflow declares
+  `permissions: contents: read` (least privilege).
+- **`README.md`**: CI status badge linking to the workflow, plus a new
+  "Continuous Integration" section explaining what the pipeline does.
+- **`docs/USAGE_UK.md` / `docs/USAGE_RU.md`**: new "GitHub Actions CI"
+  section (UA "Безперервна інтеграція", RU "Непрерывная интеграция") with
+  step-by-step description of the pipeline, how concurrency works, how to
+  read the result on a PR, how to run the same checks locally, and the
+  permissions model. Roadmap section updated to mark CI as done.
