@@ -8,6 +8,8 @@ stands. Multilingual interface in **English**, **Українська**, and **�
 This is a clean, well-structured MVP — designed to be improved and extended.
 Every change Devin makes is logged in [`CHANGELOG.md`](./CHANGELOG.md).
 
+> 📑 Localized usage guides: [🇺🇦 Українська](./docs/USAGE_UK.md) · [🇷🇺 Русский](./docs/USAGE_RU.md)
+
 ## Features
 
 - **Spike alerts**: instant notification when a tracked coin moves more than
