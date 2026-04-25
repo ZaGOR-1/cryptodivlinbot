@@ -1,0 +1,9 @@
+# Pinned to compatible-release ranges so prod deploys are reproducible while still
+# picking up patch releases. Bump these intentionally; don't widen the range silently.
+# For a fully-locked dev install use `pip install -e .[dev]` together with pyproject.toml.
+python-telegram-bot[job-queue]>=21.0,<22.0
+httpx>=0.27.0,<0.28.0
+python-dotenv>=1.0.1,<2.0.0
+pytest>=8.0.0,<9.0.0
+pytest-asyncio>=0.23.0,<0.24.0
+ruff>=0.6.0,<0.7.0

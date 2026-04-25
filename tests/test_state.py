@@ -1,0 +1,93 @@
+"""Persistence layer tests."""
+from __future__ import annotations
+
+from cryptodivlinbot.state import State
+
+
+def test_chat_lifecycle(tmp_path):
+    state = State(tmp_path / "test.sqlite")
+    chat = state.upsert_chat(123, default_language="uk")
+    assert chat.language == "uk"
+    assert chat.subscribed is False
+    # Idempotent
+    again = state.upsert_chat(123, default_language="en")
+    assert again.language == "uk"
+
+    state.set_language(123, "ru")
+    state.set_subscribed(123, True)
+    state.set_threshold(123, 2.5)
+
+    refreshed = state.get_chat(123)
+    assert refreshed is not None
+    assert refreshed.language == "ru"
+    assert refreshed.subscribed is True
+    assert refreshed.threshold_pct == 2.5
+
+    subs = state.list_subscribed_chats()
+    assert [c.chat_id for c in subs] == [123]
+
+
+def test_price_history_ordering_and_pruning(tmp_path):
+    state = State(tmp_path / "test.sqlite")
+    state.record_prices([("bitcoin", 100.0)], ts=10.0)
+    state.record_prices([("bitcoin", 101.0)], ts=20.0)
+    state.record_prices([("bitcoin", 102.0)], ts=30.0)
+    state.record_prices([("ethereum", 50.0)], ts=15.0)
+
+    btc = state.get_recent_history("bitcoin", since_ts=15.0)
+    assert btc == [(20.0, 101.0), (30.0, 102.0)]
+
+    eth = state.get_recent_history("ethereum", since_ts=0.0)
+    assert eth == [(15.0, 50.0)]
+
+    deleted = state.prune_history(older_than_ts=20.0)
+    assert deleted == 2  # ts=10 (btc) and ts=15 (eth)
+    assert state.get_recent_history("bitcoin", since_ts=0.0) == [
+        (20.0, 101.0),
+        (30.0, 102.0),
+    ]
+
+
+def test_cooldowns(tmp_path):
+    state = State(tmp_path / "test.sqlite")
+    assert state.get_last_alert_ts(1, "bitcoin") is None
+    state.set_last_alert_ts(1, "bitcoin", 1234.5)
+    assert state.get_last_alert_ts(1, "bitcoin") == 1234.5
+    state.set_last_alert_ts(1, "bitcoin", 9999.0)
+    assert state.get_last_alert_ts(1, "bitcoin") == 9999.0
+
+
+def test_coin_meta_upsert(tmp_path):
+    state = State(tmp_path / "test.sqlite")
+    state.upsert_coin_meta(
+        "bitcoin",
+        symbol="BTC",
+        name="Bitcoin",
+        rank=1,
+        pct_change_24h=1.5,
+        last_price=50000.0,
+    )
+    state.upsert_coin_meta(
+        "ethereum",
+        symbol="ETH",
+        name="Ethereum",
+        rank=2,
+        pct_change_24h=-0.5,
+        last_price=2000.0,
+    )
+    state.upsert_coin_meta(
+        "bitcoin",
+        symbol="BTC",
+        name="Bitcoin",
+        rank=1,
+        pct_change_24h=2.0,
+        last_price=51000.0,
+    )
+
+    rows = state.list_coin_meta()
+    by_id = {r["coin_id"]: r for r in rows}
+    assert by_id["bitcoin"]["last_price"] == 51000.0
+    assert by_id["bitcoin"]["pct_change_24h"] == 2.0
+    assert by_id["ethereum"]["rank"] == 2
+    # Ordered by rank ascending
+    assert [r["coin_id"] for r in rows] == ["bitcoin", "ethereum"]

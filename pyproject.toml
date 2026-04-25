@@ -1,0 +1,39 @@
+[project]
+name = "cryptodivlinbot"
+version = "0.1.0"
+description = "Telegram bot that tracks the top-N cryptocurrencies and alerts on price spikes."
+requires-python = ">=3.11"
+dependencies = [
+    "python-telegram-bot[job-queue]>=21.0,<22.0",
+    "httpx>=0.27.0,<0.28.0",
+    "python-dotenv>=1.0.1,<2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<0.24.0",
+    "ruff>=0.6.0,<0.7.0",
+]
+
+[project.scripts]
+cryptodivlinbot = "cryptodivlinbot.bot:run"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["src"]

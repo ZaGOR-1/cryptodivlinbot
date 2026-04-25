@@ -1,0 +1,62 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Each entry below corresponds to one self-contained change made by Devin while
+implementing the bot. New entries should be appended at the bottom of
+`[Unreleased]` and graduated into a versioned section on each release tag.
+
+## [Unreleased]
+
+### Added
+- **Project scaffold**: `pyproject.toml`, `requirements.txt`, `.gitignore`,
+  `.env.example`, and a `src/cryptodivlinbot/` package layout with a `tests/`
+  directory at the repo root.
+- **`config.Settings`**: typed, validated settings loaded from environment
+  variables (with `.env` autoload), covering Telegram token, threshold, window,
+  poll/digest intervals, cooldown, default language, DB path, CoinGecko/Binance
+  URLs, HTTP timeout, and log level. Includes range checks and clear errors.
+- **`i18n` module**: full UA / RU / EN translations for every user-facing string,
+  with a forgiving `t()` helper that falls back to English and then the key
+  itself, plus `normalize_language()` for handling Telegram's `xx-YY` codes.
+- **`market_data` module**: async CoinGecko `/coins/markets` client (top-N by
+  market cap with current USD price + 24h change), plus a Binance
+  `ticker/price` fallback over a static well-known coin list when CoinGecko is
+  unavailable. Encapsulated in a `MarketDataClient` that can be passed an
+  injected `httpx.AsyncClient` for tests.
+- **`state` module**: thread-safe SQLite layer with WAL journal mode, used as
+  a single shared connection guarded by a re-entrant lock. Tables for chats
+  (per-chat language / subscription / threshold), `price_history`, alert
+  cooldowns, and a coins-metadata cache; with prune helpers and per-coin
+  retention caps to keep the DB compact.
+- **`alerts` module**: pure spike-detection helpers (`detect_spike`,
+  `is_within_cooldown`, `percent_change`, `format_price`,
+  `format_signed_pct`).
+- **`keyboards` module**: inline keyboards for the main menu, language menu,
+  and back-only screens, with structured `scope:action[:arg]` callback data.
+- **Telegram handlers**: `/start`, `/menu`, `/help`, `/status`, `/subscribe`,
+  `/unsubscribe`, `/coins`, `/digest`, `/language`, `/setlang`,
+  `/setthreshold`, `/ping`, plus a single `CallbackQueryHandler` covering
+  every button.
+- **`bot` orchestration**: `BotContext`, two `JobQueue` recurring jobs
+  (`poll_job` and `digest_job`), a `_safe_send` wrapper that handles
+  `RetryAfter` (sleep + retry), `Forbidden` (auto-unsubscribe the chat),
+  `TimedOut`, and other `TelegramError`s, and a `build_application()` factory
+  used by both the entrypoint and the smoke test.
+- **Tests**: pytest suite covering alerts logic (spikes / cooldowns /
+  formatting), config validation, i18n key parity & fallbacks, state
+  persistence (chats, price history pruning, cooldowns, coin meta), and
+  market-data parsing with both CoinGecko success and Binance fallback paths
+  (using `httpx.MockTransport`).
+- **`README.md`**: setup, configuration, command reference, and architecture
+  overview.
+
+### Notes
+- The bot is multilingual (UA / RU / EN) and persists every per-chat setting
+  in SQLite, so restarts are non-destructive.
+- The default 5-minute window matches the digest cadence: the same data the
+  digest broadcasts is what the spike detector compares against the
+  configurable per-chat threshold.
