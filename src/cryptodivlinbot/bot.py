@@ -195,8 +195,14 @@ async def poll_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             last_alert = bot_ctx.state.get_last_alert_ts(chat.chat_id, snap.coin_id)
             if is_within_cooldown(last_alert, now_ts=now_ts, cooldown_sec=cooldown_sec):
                 continue
-            await _dispatch_spike(context, bot_ctx, chat.chat_id, chat.language, snap, event)
-            bot_ctx.state.set_last_alert_ts(chat.chat_id, snap.coin_id, now_ts)
+            delivered = await _dispatch_spike(
+                context, bot_ctx, chat.chat_id, chat.language, snap, event
+            )
+            # Only start the cooldown when the alert actually reached the chat;
+            # otherwise the user would silently miss the next ALERT_COOLDOWN_MIN
+            # of alerts after a transient send failure.
+            if delivered:
+                bot_ctx.state.set_last_alert_ts(chat.chat_id, snap.coin_id, now_ts)
 
 
 async def _dispatch_spike(
@@ -206,7 +212,8 @@ async def _dispatch_spike(
     language: str,
     snap: CoinSnapshot,
     event: SpikeEvent,
-) -> None:
+) -> bool:
+    """Send a single spike alert, returning ``True`` iff Telegram accepted it."""
     key = "spike_alert_up" if event.pct_change >= 0 else "spike_alert_down"
     text = t(
         key,
@@ -223,7 +230,7 @@ async def _dispatch_spike(
             chat_id=chat_id, text=text, parse_mode=ParseMode.MARKDOWN
         )
 
-    await _safe_send(
+    return await _safe_send(
         _send,
         chat_id=chat_id,
         on_forbidden=lambda: bot_ctx.state.set_subscribed(chat_id, False),

@@ -60,3 +60,18 @@ implementing the bot. New entries should be appended at the bottom of
 - The default 5-minute window matches the digest cadence: the same data the
   digest broadcasts is what the spike detector compares against the
   configurable per-chat threshold.
+
+### Fixed (PR #1 review feedback)
+- **Double `query.answer()` in the language-prefix callback branch**: the
+  Telegram API only allows answering a callback query once, so calling
+  `query.answer(text, show_alert=True)` after the eager silent
+  `query.answer()` raised `BadRequest`. The bad-language branch now uses
+  `_safe_edit` to display the error in the message body, and a comment in
+  `on_callback` documents the single-answer invariant.
+- **Spike-alert cooldown set even when delivery failed**: `_dispatch_spike`
+  now returns `bool` (propagating `_safe_send`'s success flag) and the poll
+  job only writes `last_alerts` when the alert actually reached the chat —
+  preventing a transient `RetryAfter` / `TimedOut` from silencing a chat for
+  the configured `ALERT_COOLDOWN_MIN` (default 15 min).
+- New unit tests in `tests/test_safe_send.py` cover the success, retry,
+  forbidden-callback, timeout, and generic-error branches of `_safe_send`.

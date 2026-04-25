@@ -39,13 +39,20 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     chat = bot_ctx.state.upsert_chat(update.effective_chat.id, default_language=initial_lang)
     data = (query.data or "").strip()
 
-    # Always answer the callback so the spinner clears, even on no-ops.
+    # Answer the callback exactly once so the spinner clears. The Telegram API
+    # only allows answering a query once — calling answer() again later (e.g.
+    # to show an alert popup) raises BadRequest, so each branch must produce
+    # its own response via _safe_edit instead.
     await query.answer()
 
     if data.startswith(keyboards.CB_LANG_PREFIX):
         new_lang = data[len(keyboards.CB_LANG_PREFIX) :]
         if new_lang not in LANGUAGE_NAMES:
-            await query.answer(t("bad_language", chat.language), show_alert=True)
+            await _safe_edit(
+                query,
+                t("bad_language", chat.language),
+                reply_markup=keyboards.language_menu(chat.language),
+            )
             return
         bot_ctx.state.set_language(chat.chat_id, new_lang)
         await _safe_edit(
