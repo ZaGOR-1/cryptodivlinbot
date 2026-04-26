@@ -10,6 +10,10 @@ The schema is intentionally tiny so the module stays easy to reason about. All
 writes go through a single shared connection guarded by a re-entrant lock to keep
 SQLite happy when called from both the polling job and command handlers running
 on different async tasks.
+
+Schema versions are tracked via SQLite's ``PRAGMA user_version``. Adding a new
+migration is a matter of appending a tuple to :data:`_MIGRATIONS`; on next
+startup it is applied exactly once.
 """
 from __future__ import annotations
 
@@ -37,6 +41,59 @@ class ChatPrefs:
 _MAX_HISTORY_PER_COIN = 240
 
 
+# Ordered list of (target_version, sql) migrations. Each entry is applied
+# exactly once: when the DB's current ``PRAGMA user_version`` is below
+# ``target_version``, the SQL is executed and the version is bumped.
+#
+# IMPORTANT: never edit a migration that has already shipped — append a new
+# one. Migrations are applied in order inside a single transaction.
+_MIGRATIONS: list[tuple[int, str]] = [
+    (
+        1,
+        """
+        CREATE TABLE IF NOT EXISTS chats (
+            chat_id      INTEGER PRIMARY KEY,
+            language     TEXT    NOT NULL DEFAULT 'en',
+            subscribed   INTEGER NOT NULL DEFAULT 0,
+            threshold_pct REAL   DEFAULT NULL,
+            created_at   REAL    NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS price_history (
+            coin_id   TEXT    NOT NULL,
+            ts        REAL    NOT NULL,
+            price_usd REAL    NOT NULL,
+            PRIMARY KEY (coin_id, ts)
+        );
+        CREATE INDEX IF NOT EXISTS price_history_coin_ts
+            ON price_history(coin_id, ts DESC);
+
+        CREATE TABLE IF NOT EXISTS last_alerts (
+            chat_id INTEGER NOT NULL,
+            coin_id TEXT    NOT NULL,
+            ts      REAL    NOT NULL,
+            PRIMARY KEY (chat_id, coin_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS coins_meta (
+            coin_id TEXT PRIMARY KEY,
+            symbol  TEXT NOT NULL,
+            name    TEXT NOT NULL,
+            rank    INTEGER,
+            pct_change_24h REAL,
+            last_price REAL,
+            updated_at REAL NOT NULL
+        );
+        """,
+    ),
+]
+
+
+# Highest version known to this build. Used by tests to assert that migrations
+# are wired up correctly.
+SCHEMA_VERSION: int = max(version for version, _ in _MIGRATIONS) if _MIGRATIONS else 0
+
+
 class State:
     """Thread-safe SQLite wrapper used by jobs and handlers."""
 
@@ -60,44 +117,37 @@ class State:
     # Schema
     # ------------------------------------------------------------------
     def _migrate(self) -> None:
+        """Apply pending schema migrations exactly once each.
+
+        Uses SQLite's ``PRAGMA user_version`` as the schema version cursor:
+        each migration is applied only when the DB's current version is below
+        the migration's target. Migrations should be written to be idempotent
+        (e.g. ``CREATE TABLE IF NOT EXISTS``) so a crash mid-way leaves the
+        DB safe to retry on next startup.
+        """
         with self._lock:
-            self._conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS chats (
-                    chat_id      INTEGER PRIMARY KEY,
-                    language     TEXT    NOT NULL DEFAULT 'en',
-                    subscribed   INTEGER NOT NULL DEFAULT 0,
-                    threshold_pct REAL   DEFAULT NULL,
-                    created_at   REAL    NOT NULL
-                );
+            current = self._user_version()
+            for target, sql in _MIGRATIONS:
+                if target <= current:
+                    continue
+                logger.info("Applying DB migration v%d → v%d", current, target)
+                self._conn.executescript(sql)
+                # ``PRAGMA user_version = N`` does not accept bound parameters;
+                # ``target`` is an int from a hard-coded module constant
+                # (never user input) so direct interpolation is safe here.
+                self._conn.execute(f"PRAGMA user_version = {int(target)}")
+                current = target
 
-                CREATE TABLE IF NOT EXISTS price_history (
-                    coin_id   TEXT    NOT NULL,
-                    ts        REAL    NOT NULL,
-                    price_usd REAL    NOT NULL,
-                    PRIMARY KEY (coin_id, ts)
-                );
-                CREATE INDEX IF NOT EXISTS price_history_coin_ts
-                    ON price_history(coin_id, ts DESC);
+    def _user_version(self) -> int:
+        with self._lock:
+            row = self._conn.execute("PRAGMA user_version").fetchone()
+        if row is None:
+            return 0
+        return int(row[0])
 
-                CREATE TABLE IF NOT EXISTS last_alerts (
-                    chat_id INTEGER NOT NULL,
-                    coin_id TEXT    NOT NULL,
-                    ts      REAL    NOT NULL,
-                    PRIMARY KEY (chat_id, coin_id)
-                );
-
-                CREATE TABLE IF NOT EXISTS coins_meta (
-                    coin_id TEXT PRIMARY KEY,
-                    symbol  TEXT NOT NULL,
-                    name    TEXT NOT NULL,
-                    rank    INTEGER,
-                    pct_change_24h REAL,
-                    last_price REAL,
-                    updated_at REAL NOT NULL
-                );
-                """
-            )
+    def schema_version(self) -> int:
+        """Return the current applied schema version (after ``__init__``)."""
+        return self._user_version()
 
     def close(self) -> None:
         with self._lock:

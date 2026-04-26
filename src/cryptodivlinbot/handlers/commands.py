@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -31,12 +31,11 @@ _CommandHandler = Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[None]]
 
 def _ctx(context: ContextTypes.DEFAULT_TYPE) -> BotContext:
     """Pull the shared :class:`BotContext` out of ``application.bot_data``."""
-    from ..bot import BotContext as _BotContext  # local import to avoid cycle at runtime
+    # Local import keeps ``handlers.commands`` free of an import cycle on
+    # ``..bot`` at module-load time.
+    from ..bot import get_bot_context
 
-    bot_ctx = context.application.bot_data.get("bot_context")
-    if bot_ctx is None:  # pragma: no cover - defensive
-        raise RuntimeError("BotContext is not initialized in application.bot_data")
-    return cast(_BotContext, bot_ctx)
+    return get_bot_context(context.application)
 
 
 def _resolve_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> ChatPrefs | None:
@@ -152,7 +151,12 @@ async def coins(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"${format_price(float(row['last_price']))} "
             f"({format_signed_pct(row['pct_change_24h'])} 24h)"
         )
-    await update.effective_message.reply_text("\n".join(lines))
+    # /coins is plain-text, not HTML; chunk to stay below Telegram's 4096-char
+    # ceiling when the user has bumped TOP_N_COINS up.
+    from ..bot import chunk_for_telegram  # local import to avoid cycle at module load
+
+    for chunk in chunk_for_telegram("\n".join(lines)):
+        await update.effective_message.reply_text(chunk)
 
 
 async def digest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -164,7 +168,10 @@ async def digest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if text is None:
         await update.effective_message.reply_text(t("digest_empty", chat.language))
         return
-    await update.effective_message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    from ..bot import chunk_for_telegram  # local import to avoid cycle at module load
+
+    for chunk in chunk_for_telegram(text):
+        await update.effective_message.reply_text(chunk, parse_mode=ParseMode.HTML)
 
 
 async def language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

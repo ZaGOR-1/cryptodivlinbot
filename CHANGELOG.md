@@ -224,3 +224,74 @@ implementing the bot. New entries should be appended at the bottom of
   ReplyKeyboard from §6.2 the inline menu, lists the slash-command
   equivalent for every reply button, and documents that the labels
   auto-translate after `/setlang` or an inline language change.
+
+### Hardening (8 small bugs / risks fixed in one batch)
+
+This batch addresses the eight near-term reliability and safety issues called
+out in an internal code review. None of them changed the bot's user-facing
+behaviour; together they make the bot more resilient at scale and keep its
+schema upgrade-safe.
+
+1. **Telegram 4096-character message limit** — added
+   `chunk_for_telegram(text, max_len=4096)` in `src/cryptodivlinbot/bot.py`
+   that splits at line boundaries (and hard-cuts overlong single lines as a
+   last resort). Wired into `digest_job`, `/digest`, and `/coins` so a high
+   `TOP_N_COINS` no longer makes Telegram silently reject the whole digest.
+   The inline-menu digest (`CB_DIGEST` callback) shows the first chunk plus a
+   `…` marker, since `edit_message_text` can only replace one message.
+2. **Database migrations** — `src/cryptodivlinbot/state.py` now tracks
+   `PRAGMA user_version` and applies an ordered list of `_MIGRATIONS` exactly
+   once each on startup. The current schema graduates to v1; future schema
+   changes must append new migrations rather than editing v1. Exposed
+   `SCHEMA_VERSION` constant + `State.schema_version()` accessor.
+3. **`bot_context` magic string** — replaced three hard-coded
+   `"bot_context"` lookups with a single `BOT_CONTEXT_KEY` constant +
+   typed `get_bot_context(application) -> BotContext` accessor in
+   `src/cryptodivlinbot/bot.py`. Both handler modules
+   (`handlers/commands.py`, `handlers/callbacks.py`) now route through it.
+4. **Exponential backoff on CoinGecko 5xx / 429** —
+   `src/cryptodivlinbot/market_data.py` gained `_get_with_retry` with a
+   default schedule of `(0.5, 1.5, 4.0)` s. Retries cover 5xx, 429, and
+   `httpx.RequestError`; 4xx (other than 429) and successes return
+   immediately. Made `retry_delays` a constructor parameter so tests can
+   pass `()` or `(0, 0, 0)` to skip wall-clock sleeps.
+5. **Concurrent dispatch** — `poll_job` and `digest_job` no longer
+   serialise per-chat `send_message` calls. They now build the work list
+   synchronously and dispatch it through `asyncio.gather` bounded by an
+   `asyncio.Semaphore(_DISPATCH_CONCURRENCY=20)` so we stay friendly to
+   Telegram's per-bot rate cap while parallelising broadcasts.
+6. **Chat-id PII masking in logs** — added `mask_chat_id(chat_id)` that
+   returns `…NNNN` (last 4 chars) for ids longer than 4 characters. All
+   `_safe_send` log lines that previously included the raw `chat_id` now
+   route through it. Negative group-chat ids are masked the same way.
+7. **`last_alerts` uniqueness** — verified the table already has
+   `PRIMARY KEY (chat_id, coin_id)` and added a regression test that
+   asserts a literal duplicate insert raises `sqlite3.IntegrityError`.
+8. **Markdown → HTML parse mode** — switched every `parse_mode=` site
+   from `ParseMode.MARKDOWN` to `ParseMode.HTML`. Templates in
+   `src/cryptodivlinbot/i18n.py` now use `<b>…</b>` instead of `*…*` for
+   the spike alerts (EN / UK / RU). Replaced
+   `alerts.escape_md` with `alerts.escape_html` (delegates to
+   `html.escape(value, quote=False)`) so the only special characters left
+   to escape are `<`, `>`, `&` — the previous fragility around dashes,
+   parentheses, and unbalanced underscores in coin names is gone.
+
+#### Tests
+- New `tests/test_bot_helpers.py` covers `mask_chat_id`,
+  `chunk_for_telegram` (passthrough, line-boundary split, hard-cut of
+  oversize line, default == `TELEGRAM_MAX_MESSAGE_LEN`), and
+  `get_bot_context` (sentinel return + `RuntimeError` when missing).
+- `tests/test_state.py` extended with `test_schema_version_is_set_on_fresh_db`,
+  `test_migrations_are_idempotent`,
+  `test_migrations_apply_to_legacy_unversioned_db`, and
+  `test_last_alerts_unique_per_chat_and_coin`.
+- `tests/test_market_data.py` gained
+  `test_coingecko_retries_on_5xx_then_succeeds`,
+  `test_coingecko_retries_on_429_rate_limit`, and
+  `test_coingecko_retries_exhaust_then_falls_back_to_binance`.
+  Existing fallback tests now pass `retry_delays=()` to keep the suite fast.
+- `tests/test_alerts.py`: replaced `TestEscapeMd` with `TestEscapeHtml`
+  covering `<>&` escaping, "md specials are no longer touched", and
+  `quote=False` behaviour.
+- Total: 109 tests, all passing under `pytest`, `ruff check`, and
+  `mypy --strict`.

@@ -33,7 +33,7 @@ from telegram.ext import (
 from .alerts import (
     SpikeEvent,
     detect_spike,
-    escape_md,
+    escape_html,
     format_price,
     format_signed_pct,
     is_within_cooldown,
@@ -46,6 +46,20 @@ from .market_data import CoinSnapshot, MarketDataClient, MarketDataError
 from .state import State
 
 logger = logging.getLogger(__name__)
+
+# Key under which the shared :class:`BotContext` lives in PTB's
+# ``application.bot_data`` mapping. Always prefer :func:`get_bot_context` over
+# touching ``application.bot_data`` directly so a typo can't slip past mypy.
+BOT_CONTEXT_KEY: str = "bot_context"
+
+# Telegram caps a single ``send_message`` call at 4096 UTF-16 code units. We
+# chunk anything longer at line boundaries to stay safely below the limit.
+TELEGRAM_MAX_MESSAGE_LEN: int = 4096
+
+# Cap on concurrent ``send_message`` calls inside a single ``poll_job`` /
+# ``digest_job`` cycle. Keeps us friendly to Telegram's per-bot rate limit
+# (~30 msg/s overall) while still using parallelism for big chat lists.
+_DISPATCH_CONCURRENCY: int = 20
 
 
 @dataclass(slots=True)
@@ -95,10 +109,11 @@ class BotContext:
                 t(
                     "digest_line",
                     language,
-                    # Symbol is interpolated into a Markdown-parsed message;
-                    # escape special chars in case CoinGecko returns one
-                    # like "WETH_ETH" or "FOO*".
-                    symbol=escape_md(str(row["symbol"])),
+                    # The line is interpolated into a HTML-parsed message;
+                    # escape special chars in case CoinGecko returns a name
+                    # like "Wrapped <ETH>" — which would otherwise be parsed
+                    # as a (rejected) HTML tag.
+                    symbol=escape_html(str(row["symbol"])),
                     price=format_price(float(row["last_price"])),
                     pct_str=format_signed_pct(pct_window),
                     window=self.settings.spike_window_min,
@@ -106,6 +121,65 @@ class BotContext:
                 )
             )
         return "\n".join(lines)
+
+
+def get_bot_context(application: Application[Any, Any, Any, Any, Any, Any]) -> BotContext:
+    """Return the shared :class:`BotContext` stored in ``application.bot_data``.
+
+    This indirection keeps the magic-string key in exactly one place and
+    raises a clear error if the bot was set up incorrectly, instead of the
+    cryptic ``KeyError: 'bot_context'`` you'd get from a direct lookup.
+    """
+    bot_ctx = application.bot_data.get(BOT_CONTEXT_KEY)
+    if bot_ctx is None:  # pragma: no cover - defensive: build_application always sets this
+        raise RuntimeError(
+            f"BotContext is not initialized in application.bot_data[{BOT_CONTEXT_KEY!r}]"
+        )
+    return cast(BotContext, bot_ctx)
+
+
+def mask_chat_id(chat_id: int) -> str:
+    """Return a privacy-preserving short identifier for ``chat_id`` in logs.
+
+    Telegram chat ids are personal identifiers — they uniquely link to a user
+    or group. We only ever log a ``…NNNN`` tail so log dumps don't leak the
+    full id while still leaving enough signal to correlate consecutive lines
+    about the same chat.
+    """
+    s = str(chat_id)
+    if len(s) <= 4:
+        return s
+    return "…" + s[-4:]
+
+
+def chunk_for_telegram(text: str, *, max_len: int = TELEGRAM_MAX_MESSAGE_LEN) -> list[str]:
+    """Split ``text`` into a list of pieces, each ≤ ``max_len`` characters.
+
+    Pieces are split at newline boundaries when possible so multi-line digests
+    don't get bisected mid-line. As a last resort (a single line longer than
+    ``max_len``) the line itself is hard-cut.
+    """
+    if len(text) <= max_len:
+        return [text]
+    chunks: list[str] = []
+    current = ""
+    for line in text.split("\n"):
+        # Hard-cut very long single lines that can't fit anywhere.
+        while len(line) > max_len:
+            head, line = line[:max_len], line[max_len:]
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.append(head)
+        candidate = f"{current}\n{line}" if current else line
+        if len(candidate) > max_len:
+            chunks.append(current)
+            current = line
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 # ----------------------------------------------------------------------
@@ -121,6 +195,7 @@ async def _safe_send(
 
     Returns ``True`` when the message was delivered.
     """
+    log_id = mask_chat_id(chat_id)
     try:
         await send()
         return True
@@ -134,23 +209,23 @@ async def _safe_send(
             # Forbidden is a TelegramError subclass — handle it explicitly so the
             # on_forbidden callback (auto-unsubscribe) runs even when the chat
             # blocks us between the rate-limit and the retry.
-            logger.info("Bot blocked or kicked from chat %s on retry: %s", chat_id, exc2)
+            logger.info("Bot blocked or kicked from chat %s on retry: %s", log_id, exc2)
             if on_forbidden is not None:
                 on_forbidden()
             return False
         except TelegramError as exc2:
-            logger.warning("send failed after retry to chat %s: %s", chat_id, exc2)
+            logger.warning("send failed after retry to chat %s: %s", log_id, exc2)
             return False
     except Forbidden as exc:
-        logger.info("Bot blocked or kicked from chat %s: %s", chat_id, exc)
+        logger.info("Bot blocked or kicked from chat %s: %s", log_id, exc)
         if on_forbidden is not None:
             on_forbidden()
         return False
     except TimedOut as exc:
-        logger.warning("send timed out to chat %s: %s", chat_id, exc)
+        logger.warning("send timed out to chat %s: %s", log_id, exc)
         return False
     except TelegramError as exc:
-        logger.warning("send failed to chat %s: %s", chat_id, exc)
+        logger.warning("send failed to chat %s: %s", log_id, exc)
         return False
 
 
@@ -159,7 +234,7 @@ async def _safe_send(
 # ----------------------------------------------------------------------
 async def poll_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Poll market data and dispatch spike alerts to subscribed chats."""
-    bot_ctx: BotContext = context.application.bot_data["bot_context"]
+    bot_ctx = get_bot_context(context.application)
     settings = bot_ctx.settings
 
     try:
@@ -193,6 +268,9 @@ async def poll_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     window_sec = settings.spike_window_min * 60
     cooldown_sec = settings.alert_cooldown_min * 60
 
+    # Build the list of (chat, snap, event) tuples first so detection happens
+    # synchronously (cheap) and only delivery is parallelised.
+    pending: list[tuple[int, str, CoinSnapshot, SpikeEvent]] = []
     for snap in snapshots:
         history = bot_ctx.state.get_recent_history(
             snap.coin_id, since_ts=now_ts - window_sec
@@ -210,14 +288,33 @@ async def poll_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             last_alert = bot_ctx.state.get_last_alert_ts(chat.chat_id, snap.coin_id)
             if is_within_cooldown(last_alert, now_ts=now_ts, cooldown_sec=cooldown_sec):
                 continue
+            pending.append((chat.chat_id, chat.language, snap, event))
+
+    if not pending:
+        return
+
+    # Bounded-concurrency dispatch: a Semaphore limits how many `send_message`
+    # calls run in parallel so we don't burst past Telegram's per-bot rate
+    # limit when broadcasting to thousands of chats.
+    semaphore = asyncio.Semaphore(_DISPATCH_CONCURRENCY)
+
+    async def _one(
+        chat_id: int, language: str, snap: CoinSnapshot, event: SpikeEvent
+    ) -> None:
+        async with semaphore:
             delivered = await _dispatch_spike(
-                context, bot_ctx, chat.chat_id, chat.language, snap, event
+                context, bot_ctx, chat_id, language, snap, event
             )
-            # Only start the cooldown when the alert actually reached the chat;
-            # otherwise the user would silently miss the next ALERT_COOLDOWN_MIN
-            # of alerts after a transient send failure.
-            if delivered:
-                bot_ctx.state.set_last_alert_ts(chat.chat_id, snap.coin_id, now_ts)
+        # Only start the cooldown when the alert actually reached the chat;
+        # otherwise the user would silently miss the next ALERT_COOLDOWN_MIN
+        # of alerts after a transient send failure.
+        if delivered:
+            bot_ctx.state.set_last_alert_ts(chat_id, snap.coin_id, now_ts)
+
+    await asyncio.gather(
+        *(_one(cid, lang, snap, ev) for cid, lang, snap, ev in pending),
+        return_exceptions=False,
+    )
 
 
 async def _dispatch_spike(
@@ -233,11 +330,11 @@ async def _dispatch_spike(
     text = t(
         key,
         language,
-        # symbol/name go inside *bold* markup, so we must escape any
-        # `_`, `*`, `` ` ``, `[` they contain — otherwise an unbalanced
-        # entity breaks the entire message.
-        symbol=escape_md(snap.symbol),
-        name=escape_md(snap.name),
+        # symbol/name go inside <b>…</b> markup; escape any HTML-special
+        # chars they might contain so a stray `<` doesn't make Telegram
+        # reject the entire message.
+        symbol=escape_html(snap.symbol),
+        name=escape_html(snap.name),
         pct=abs(event.pct_change),
         window=bot_ctx.settings.spike_window_min,
         price=format_price(snap.price_usd),
@@ -245,7 +342,7 @@ async def _dispatch_spike(
 
     async def _send() -> None:
         await context.bot.send_message(
-            chat_id=chat_id, text=text, parse_mode=ParseMode.MARKDOWN
+            chat_id=chat_id, text=text, parse_mode=ParseMode.HTML
         )
 
     return await _safe_send(
@@ -257,32 +354,44 @@ async def _dispatch_spike(
 
 async def digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Broadcast the periodic digest to every subscribed chat."""
-    bot_ctx: BotContext = context.application.bot_data["bot_context"]
+    bot_ctx = get_bot_context(context.application)
     chats = bot_ctx.state.list_subscribed_chats()
     if not chats:
         return
 
-    for chat in chats:
-        maybe_text = bot_ctx.build_digest_text(chat.language)
-        if maybe_text is None:
-            continue
-        digest_text: str = maybe_text  # narrow once for the closures below.
+    semaphore = asyncio.Semaphore(_DISPATCH_CONCURRENCY)
 
-        async def _send(
-            digest_text: str = digest_text, chat_id: int = chat.chat_id
-        ) -> None:
-            await context.bot.send_message(
-                chat_id=chat_id, text=digest_text, parse_mode=ParseMode.MARKDOWN
-            )
+    async def _one(chat_id: int, language: str) -> None:
+        digest_text = bot_ctx.build_digest_text(language)
+        if digest_text is None:
+            return
 
-        def _on_forbidden(chat_id: int = chat.chat_id) -> None:
-            bot_ctx.state.set_subscribed(chat_id, False)
+        def _on_forbidden(cid: int = chat_id) -> None:
+            bot_ctx.state.set_subscribed(cid, False)
 
-        await _safe_send(
-            _send,
-            chat_id=chat.chat_id,
-            on_forbidden=_on_forbidden,
-        )
+        async with semaphore:
+            for chunk in chunk_for_telegram(digest_text):
+
+                async def _send(
+                    payload: str = chunk, cid: int = chat_id
+                ) -> None:
+                    await context.bot.send_message(
+                        chat_id=cid, text=payload, parse_mode=ParseMode.HTML
+                    )
+
+                ok = await _safe_send(
+                    _send, chat_id=chat_id, on_forbidden=_on_forbidden
+                )
+                if not ok:
+                    # The chat is unreachable (blocked, kicked, transient
+                    # failure) — stop sending the remaining chunks so we
+                    # don't spam retries.
+                    break
+
+    await asyncio.gather(
+        *(_one(chat.chat_id, chat.language) for chat in chats),
+        return_exceptions=False,
+    )
 
 
 # ----------------------------------------------------------------------
@@ -311,7 +420,7 @@ def _register_handlers(application: Application[Any, Any, Any, Any, Any, Any]) -
 
 
 async def _on_startup(application: Application[Any, Any, Any, Any, Any, Any]) -> None:
-    bot_ctx: BotContext = application.bot_data["bot_context"]
+    bot_ctx = get_bot_context(application)
     settings = bot_ctx.settings
     jq = application.job_queue
     if jq is None:  # pragma: no cover - PTB always provides this with [job-queue] extra
@@ -340,7 +449,9 @@ async def _on_startup(application: Application[Any, Any, Any, Any, Any, Any]) ->
 
 
 async def _on_shutdown(application: Application[Any, Any, Any, Any, Any, Any]) -> None:
-    bot_ctx = cast("BotContext | None", application.bot_data.get("bot_context"))
+    bot_ctx = cast(
+        "BotContext | None", application.bot_data.get(BOT_CONTEXT_KEY)
+    )
     if bot_ctx is None:
         return
     try:
@@ -374,7 +485,7 @@ def build_application(
         .post_shutdown(_on_shutdown)
         .build()
     )
-    application.bot_data["bot_context"] = bot_ctx
+    application.bot_data[BOT_CONTEXT_KEY] = bot_ctx
     _register_handlers(application)
     return application
 

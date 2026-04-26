@@ -6,7 +6,7 @@ operate the bot purely via the keyboard.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from telegram import CallbackQuery, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
@@ -23,12 +23,10 @@ logger = logging.getLogger(__name__)
 
 
 def _ctx(context: ContextTypes.DEFAULT_TYPE) -> BotContext:
-    from ..bot import BotContext as _BotContext  # local import to avoid cycle at runtime
+    # Local import to avoid an import cycle on ``..bot`` at module load.
+    from ..bot import get_bot_context
 
-    bot_ctx = context.application.bot_data.get("bot_context")
-    if bot_ctx is None:  # pragma: no cover - defensive
-        raise RuntimeError("BotContext is not initialized in application.bot_data")
-    return cast(_BotContext, bot_ctx)
+    return get_bot_context(context.application)
 
 
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -143,11 +141,32 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 reply_markup=keyboards.back_only(chat.language),
             )
             return
+        # The digest may exceed Telegram's 4096-char ceiling once
+        # ``TOP_N_COINS`` is bumped up. We can only edit ONE message, so
+        # truncate when we can't fit the full payload.
+        from ..bot import (  # local import to avoid cycle at module load
+            TELEGRAM_MAX_MESSAGE_LEN,
+            chunk_for_telegram,
+        )
+
+        chunks = chunk_for_telegram(digest_text)
+        first = chunks[0]
+        if len(chunks) > 1:
+            suffix = "\n…"
+            stripped = first.rstrip()
+            # ``chunk_for_telegram`` already guarantees ``first`` ≤ max, but
+            # we're about to append two extra characters — re-check so a chunk
+            # that landed at exactly the cap doesn't push the final message
+            # past Telegram's 4096-UTF-16-unit limit.
+            budget = TELEGRAM_MAX_MESSAGE_LEN - len(suffix)
+            if len(stripped) > budget:
+                stripped = stripped[:budget]
+            first = stripped + suffix
         await _safe_edit(
             query,
-            digest_text,
+            first,
             reply_markup=keyboards.back_only(chat.language),
-            parse_mode=ParseMode.MARKDOWN,
+            parse_mode=ParseMode.HTML,
         )
         return
 

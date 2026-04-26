@@ -5,7 +5,7 @@ import pytest
 
 from cryptodivlinbot.alerts import (
     detect_spike,
-    escape_md,
+    escape_html,
     format_price,
     format_signed_pct,
     is_within_cooldown,
@@ -105,21 +105,34 @@ class TestFormatters:
         assert format_signed_pct(-1.2) == "-1.20%"
 
 
-class TestEscapeMd:
+class TestEscapeHtml:
     @pytest.mark.parametrize(
         "value,expected",
         [
             ("BTC", "BTC"),  # plain alphanum is untouched
-            ("WETH_ETH", r"WETH\_ETH"),  # underscore — the prod failure mode
-            ("FOO*BAR", r"FOO\*BAR"),  # asterisk — would open a stray bold
-            ("a`b", r"a\`b"),  # backtick — code span
-            ("see [name](url)", r"see \[name](url)"),  # link bracket
-            ("mix _of_ *all*`x`[", r"mix \_of\_ \*all\*\`x\`\["),
+            ("Wrapped <ETH>", "Wrapped &lt;ETH&gt;"),  # would otherwise be a tag
+            ("AT&T", "AT&amp;T"),  # ampersand starts an HTML entity
+            ("a < b", "a &lt; b"),  # standalone less-than
+            ("Tom & Jerry > Mickey", "Tom &amp; Jerry &gt; Mickey"),
         ],
     )
-    def test_escape_md(self, value, expected):
-        assert escape_md(value) == expected
+    def test_escape_html(self, value, expected):
+        assert escape_html(value) == expected
 
-    def test_escape_md_does_not_touch_safe_chars(self):
-        # Punctuation, digits, currency, hyphens, periods — all fine.
-        assert escape_md("BTC-USD 1,234.50 (+2.5%)") == "BTC-USD 1,234.50 (+2.5%)"
+    def test_escape_html_leaves_md_specials_alone(self):
+        # `_`, `*`, `` ` ``, `[`, `(`, `)` are NOT html-special; HTML mode
+        # is precisely why we no longer have to escape them by hand.
+        assert (
+            escape_html("WETH_ETH FOO*BAR a`b [name](url)")
+            == "WETH_ETH FOO*BAR a`b [name](url)"
+        )
+
+    def test_escape_html_does_not_touch_safe_chars(self):
+        assert escape_html("BTC-USD 1,234.50 (+2.5%)") == "BTC-USD 1,234.50 (+2.5%)"
+
+    def test_escape_html_quotes_are_left_alone(self):
+        # quote=False keeps single/double quotes readable; we never use them
+        # inside HTML attribute values, so escaping them is just visual noise.
+        assert escape_html("She said \"hi\" — it's fine") == (
+            "She said \"hi\" — it's fine"
+        )

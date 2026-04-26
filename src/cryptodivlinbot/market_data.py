@@ -15,6 +15,11 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# Exponential-backoff schedule used when CoinGecko returns a 5xx or transient
+# network error. We retry up to ``len(_COINGECKO_RETRY_DELAYS)`` times before
+# falling back to Binance, sleeping the listed seconds between attempts.
+_COINGECKO_RETRY_DELAYS: tuple[float, ...] = (0.5, 1.5, 4.0)
+
 # Mapping from a few common CoinGecko ids to the equivalent Binance USDT trading pair.
 # Binance is only used when CoinGecko fails; symbols are what the bot displays anyway.
 _BINANCE_SYMBOL_MAP: dict[str, str] = {
@@ -84,12 +89,14 @@ class MarketDataClient:
         coingecko_api_key: str | None = None,
         timeout_sec: float = 10.0,
         client: httpx.AsyncClient | None = None,
+        retry_delays: tuple[float, ...] = _COINGECKO_RETRY_DELAYS,
     ) -> None:
         self._coingecko_base_url = coingecko_base_url.rstrip("/")
         self._binance_base_url = binance_base_url.rstrip("/")
         self._coingecko_api_key = coingecko_api_key
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(timeout=timeout_sec)
+        self._retry_delays = retry_delays
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -100,6 +107,46 @@ class MarketDataClient:
 
     async def __aexit__(self, *exc_info: object) -> None:
         await self.aclose()
+
+    async def _get_with_retry(
+        self,
+        url: str,
+        *,
+        params: dict[str, str | int] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        """GET ``url`` with exponential backoff on transient failures.
+
+        Retries on:
+          * HTTP 5xx (server-side error — CoinGecko is overloaded / restarting),
+          * HTTP 429 (rate-limit; CoinGecko's free tier returns these),
+          * :class:`httpx.RequestError` (network glitch, DNS, timeout).
+
+        4xx (other than 429) and successful responses are returned immediately.
+        Raises the last exception or returns the last response after the final
+        attempt.
+        """
+        last_exc: Exception | None = None
+        last_resp: httpx.Response | None = None
+        for attempt, delay in enumerate((0.0, *self._retry_delays)):
+            if delay > 0:
+                logger.info(
+                    "Retrying %s in %.1fs (attempt %d)", url, delay, attempt + 1
+                )
+                await asyncio.sleep(delay)
+            try:
+                resp = await self._client.get(url, params=params, headers=headers)
+            except httpx.RequestError as exc:
+                last_exc = exc
+                continue
+            if resp.status_code < 500 and resp.status_code != 429:
+                return resp
+            last_resp = resp
+        if last_resp is not None:
+            return last_resp
+        # Only network errors hit; surface the last one for the caller.
+        assert last_exc is not None  # invariant: at least one attempt was made
+        raise last_exc
 
     # ------------------------------------------------------------------
     # CoinGecko
@@ -129,7 +176,7 @@ class MarketDataClient:
             headers["x-cg-pro-api-key"] = self._coingecko_api_key
         url = f"{self._coingecko_base_url}/coins/markets"
 
-        resp = await self._client.get(url, params=params, headers=headers or None)
+        resp = await self._get_with_retry(url, params=params, headers=headers or None)
         resp.raise_for_status()
         data = resp.json()
         if not isinstance(data, list) or not data:

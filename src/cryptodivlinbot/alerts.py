@@ -7,6 +7,7 @@ unit-test in isolation.
 """
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass
 
 
@@ -102,24 +103,13 @@ def format_signed_pct(pct: float | None) -> str:
     return f"{sign}{pct:.2f}%"
 
 
-# Characters that are special in Telegram's *legacy* Markdown parse mode.
-# We escape them in dynamic values (coin symbols and names) before
-# interpolating into a `parse_mode=Markdown` message — otherwise a coin
-# whose name contains an underscore (e.g. "wormhole_eth") or asterisk
-# silently breaks the whole message:
-#     "Can't parse entities: can't find end of the entity ..."
-_MD_SPECIAL_CHARS = ("_", "*", "`", "[")
+def escape_html(value: str) -> str:
+    """HTML-escape ``value`` for Telegram's HTML parse mode.
 
-
-def escape_md(value: str) -> str:
-    """Backslash-escape Telegram legacy-Markdown special characters in ``value``.
-
-    Apply to user-facing dynamic content (coin symbol, coin name) before
-    passing it into a template that will be sent with
-    ``ParseMode.MARKDOWN``. Idempotency is *not* guaranteed: do not call
-    this twice on the same string.
+    The bot sends rich text via ``ParseMode.HTML`` because its escape rules
+    are far simpler than legacy Markdown / MarkdownV2 — only ``<``, ``>``
+    and ``&`` need to be escaped. Apply this to any user-supplied or
+    upstream-supplied dynamic value (coin symbol, coin name) before
+    interpolating it into a template that will be parsed as HTML.
     """
-    out = value
-    for ch in _MD_SPECIAL_CHARS:
-        out = out.replace(ch, "\\" + ch)
-    return out
+    return html.escape(value, quote=False)

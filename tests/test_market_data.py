@@ -65,10 +65,13 @@ async def test_falls_back_to_binance_on_coingecko_failure():
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
+        # ``retry_delays=()`` skips the exponential-backoff sleeps so the test
+        # doesn't add 6s of wall-clock waiting per run.
         md = MarketDataClient(
             coingecko_base_url="https://api.coingecko.com/api/v3",
             binance_base_url="https://api.binance.com",
             client=client,
+            retry_delays=(),
         )
         snapshots = await md.fetch_top_markets(3)
 
@@ -94,7 +97,89 @@ async def test_coingecko_empty_response_falls_back():
             coingecko_base_url="https://api.coingecko.com/api/v3",
             binance_base_url="https://api.binance.com",
             client=client,
+            retry_delays=(),
         )
         snapshots = await md.fetch_top_markets(2)
 
     assert snapshots
+
+
+@pytest.mark.asyncio
+async def test_coingecko_retries_on_5xx_then_succeeds():
+    """A transient 503 must trigger a retry before the fallback kicks in."""
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "coingecko" in str(request.url.host):
+            calls["count"] += 1
+            if calls["count"] < 3:
+                return httpx.Response(503, text="overloaded")
+            return httpx.Response(200, json=_fake_coingecko_payload())
+        return httpx.Response(500)  # binance shouldn't be hit
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        md = MarketDataClient(
+            coingecko_base_url="https://api.coingecko.com/api/v3",
+            binance_base_url="https://api.binance.com",
+            client=client,
+            retry_delays=(0, 0, 0),
+        )
+        snapshots = await md.fetch_top_markets(2)
+
+    assert calls["count"] == 3
+    assert [s.coin_id for s in snapshots] == ["bitcoin", "ethereum"]
+
+
+@pytest.mark.asyncio
+async def test_coingecko_retries_on_429_rate_limit():
+    """CoinGecko's free tier returns 429s that should be retried, not failed."""
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "coingecko" in str(request.url.host):
+            calls["count"] += 1
+            if calls["count"] < 2:
+                return httpx.Response(429, text="rate limited")
+            return httpx.Response(200, json=_fake_coingecko_payload())
+        return httpx.Response(500)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        md = MarketDataClient(
+            coingecko_base_url="https://api.coingecko.com/api/v3",
+            binance_base_url="https://api.binance.com",
+            client=client,
+            retry_delays=(0, 0, 0),
+        )
+        snapshots = await md.fetch_top_markets(2)
+
+    assert calls["count"] == 2
+    assert snapshots
+
+
+@pytest.mark.asyncio
+async def test_coingecko_retries_exhaust_then_falls_back_to_binance():
+    """All retries 5xx → fall back to the static Binance list."""
+    coingecko_calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "coingecko" in str(request.url.host):
+            coingecko_calls["count"] += 1
+            return httpx.Response(503, text="still overloaded")
+        if request.url.path == "/api/v3/ticker/price":
+            return httpx.Response(200, json={"price": "100.0"})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        md = MarketDataClient(
+            coingecko_base_url="https://api.coingecko.com/api/v3",
+            binance_base_url="https://api.binance.com",
+            client=client,
+            retry_delays=(0, 0, 0),  # 1 initial + 3 retries = 4 total attempts
+        )
+        snapshots = await md.fetch_top_markets(3)
+
+    assert coingecko_calls["count"] == 4  # initial + 3 retries
+    assert snapshots, "must fall back to Binance after retries exhausted"
