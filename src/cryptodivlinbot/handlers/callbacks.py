@@ -144,12 +144,24 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # The digest may exceed Telegram's 4096-char ceiling once
         # ``TOP_N_COINS`` is bumped up. We can only edit ONE message, so
         # truncate when we can't fit the full payload.
-        from ..bot import chunk_for_telegram  # local import to avoid cycle
+        from ..bot import (  # local import to avoid cycle at module load
+            TELEGRAM_MAX_MESSAGE_LEN,
+            chunk_for_telegram,
+        )
 
         chunks = chunk_for_telegram(digest_text)
         first = chunks[0]
         if len(chunks) > 1:
-            first = first.rstrip() + "\n…"
+            suffix = "\n…"
+            stripped = first.rstrip()
+            # ``chunk_for_telegram`` already guarantees ``first`` ≤ max, but
+            # we're about to append two extra characters — re-check so a chunk
+            # that landed at exactly the cap doesn't push the final message
+            # past Telegram's 4096-UTF-16-unit limit.
+            budget = TELEGRAM_MAX_MESSAGE_LEN - len(suffix)
+            if len(stripped) > budget:
+                stripped = stripped[:budget]
+            first = stripped + suffix
         await _safe_edit(
             query,
             first,
