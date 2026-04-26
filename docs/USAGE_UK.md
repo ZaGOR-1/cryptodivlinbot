@@ -300,8 +300,15 @@ docker compose logs -f bot       # подивитись лог у реально
 
 ### 11.3. Що задано в `docker-compose.yml`
 
-- `restart: unless-stopped` — автоматичний рестарт при падінні / ребуті
-  хоста.
+- `restart: unless-stopped` — автоматичний рестарт при падінні
+  процесу, OOM-кілі, рестарті демона Docker та ребуті хоста. На
+  відміну від `always`, поважає явний `docker stop` (вручну
+  зупинений контейнер не оживає сам).
+- `init: true` — `tini` як PID 1 коректно пересилає SIGTERM у
+  Python, щоб PTB міг чисто завершити роботу (закрити WAL, зупинити
+  JobQueue) без SIGKILL.
+- `stop_grace_period: 30s` — даємо PTB час дочекатися завершення
+  поточного циклу опитування перед SIGKILL.
 - `env_file: .env` — токен і всі параметри підвантажуються з `.env`
   поряд з `docker-compose.yml`.
 - `volumes: cryptodivlinbot_data:/data` — SQLite живе у named volume,
@@ -310,6 +317,13 @@ docker compose logs -f bot       # подивитись лог у реально
   вкладається в 50 МБ; ліміт є на випадок витоку.
 - `logging: json-file` з ротацією 10 МБ × 5 файлів — диск не
   заллється навіть якщо бот лежить тижнями.
+
+> Без Docker? Тоді поглянь на розділ
+> [«Run as a systemd service»](../README.md#run-as-a-systemd-service)
+> у `README.md` — є готовий
+> [`deploy/cryptodivlinbot.service`](../deploy/cryptodivlinbot.service)
+> з `Restart=on-failure`, обмеженням crash-loop'ів та посиленим
+> sandbox'ом (працює на VPS / Raspberry Pi).
 
 ### 11.4. Корисні команди
 

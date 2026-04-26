@@ -7,7 +7,20 @@ services:
       dockerfile: Dockerfile
     image: cryptodivlinbot:latest
     container_name: cryptodivlinbot
+    # Auto-restart on every kind of failure: process crash, OOM kill,
+    # daemon restart, host reboot. ``unless-stopped`` is preferred over
+    # ``always`` because it respects an explicit ``docker stop`` (we
+    # don't want a manually-stopped container to come back when the
+    # daemon restarts).
     restart: unless-stopped
+    # Run an init (tini) as PID 1 so SIGTERM is forwarded to the Python
+    # process and PTB can shut down gracefully (drain the JobQueue,
+    # close the SQLite WAL, etc.) instead of being SIGKILL'd.
+    init: true
+    # Give PTB enough time to finish its current poll cycle and run the
+    # JobQueue shutdown. Default is 10s which is occasionally too tight
+    # under network latency.
+    stop_grace_period: 30s
     # Pull config from a `.env` file next to this compose file.
     # Required: TELEGRAM_BOT_TOKEN. All other vars have sensible defaults.
     env_file:
