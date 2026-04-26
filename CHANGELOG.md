@@ -295,3 +295,58 @@ schema upgrade-safe.
   `quote=False` behaviour.
 - Total: 109 tests, all passing under `pytest`, `ruff check`, and
   `mypy --strict`.
+
+### Added (Backups + `/broadcast`)
+- **`backup` module**: `run_backup()` takes an online SQLite snapshot
+  using `Connection.backup` (safe under WAL — no locks against writers),
+  writes it to `${BACKUP_DIR}/cryptodivlinbot-YYYYMMDDTHHMMSSZ.sqlite`,
+  then prunes the directory to keep only the newest
+  `${BACKUP_RETENTION_COUNT}` files (sorted by mtime). Two backups within
+  the same UTC second are disambiguated with a numeric suffix; unrelated
+  files in the directory are never touched. Defaults give 24h of hourly
+  history.
+- **`backup_job`** registered on PTB's JobQueue at startup with
+  `interval=BACKUP_INTERVAL_MIN * 60` and `first=30s` so even a
+  short-lived process leaves at least one snapshot behind. SQLite's
+  blocking `backup()` call is dispatched via `asyncio.to_thread` to keep
+  the event loop responsive. Errors are logged but never raised — the
+  job loop survives transient I/O issues.
+- **`/broadcast <text>` admin command**: relays the rest of the message
+  (HTML formatting allowed) to every currently subscribed chat using the
+  same bounded-concurrency dispatch path as the periodic digest. Honours
+  the 4096-char ceiling via `chunk_for_telegram`, auto-unsubscribes
+  blocked chats mid-broadcast, and replies to the admin with a
+  `delivered N/M, failed K` summary. Permission is gated on the new
+  `ADMIN_CHAT_IDS` setting (frozenset for O(1) membership check); with
+  the default empty set, the command is fully disabled.
+- **`broadcast_to_subscribers(context, text=…)`** helper in `bot.py` —
+  reusable from any future admin / scheduled job, returns
+  `(delivered, total)`.
+- **`config.Settings`**: four new env-backed fields:
+  - `BACKUP_DIR` (`Path`, default `backups`)
+  - `BACKUP_INTERVAL_MIN` (int, 1–10080, default 60)
+  - `BACKUP_RETENTION_COUNT` (int, 1–10000, default 24)
+  - `ADMIN_CHAT_IDS` (`frozenset[int]`, comma-separated, default empty)
+- **i18n**: `broadcast_usage`, `broadcast_started`, `broadcast_done`,
+  `broadcast_no_subscribers` keys added in EN/UK/RU.
+- **Docker**: `docker-compose.yml` now sets `BACKUP_DIR=/data/backups`
+  so snapshots persist on the same named volume as the live DB.
+- **Tests**:
+  - `tests/test_backup.py` — 6 tests covering snapshot creation,
+    no-source-DB no-op, `retention_count=0` rejection, rotation
+    correctness across multiple cycles, same-second filename
+    disambiguation, and "rotation never deletes unrelated files".
+  - `tests/test_broadcast.py` — 6 async tests covering the no-subscribers
+    short-circuit, all-deliver happy path, `Forbidden` →
+    auto-unsubscribe, partial-failure counting, oversized payload
+    chunking, and "stop chunks after first failure".
+  - `tests/test_config.py` — 5 new tests covering backup defaults,
+    `ADMIN_CHAT_IDS` parsing (with whitespace and trailing commas),
+    `ADMIN_CHAT_IDS` rejection of non-integer entries, and out-of-range
+    `BACKUP_INTERVAL_MIN` / `BACKUP_RETENTION_COUNT`.
+- **Docs**: README gains a "Backups" section (rotation policy, restore
+  recipe, schema-migration note) and an "Admin / `/broadcast`" section
+  (chat-id discovery via `@userinfobot`, configuration, dispatch
+  semantics). USAGE_UK.md and USAGE_RU.md mirror the new env vars and
+  command in their parameter / command tables.
+- Total: 126 tests passing, `ruff` and `mypy --strict` green.

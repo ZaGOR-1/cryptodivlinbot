@@ -97,6 +97,13 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
         "permission_denied": "Permission denied.",
         "private_only": "This command works only in a private chat with the bot.",
         "n_a": "n/a",
+        "broadcast_usage": (
+            "Usage: /broadcast <message>\n"
+            "Sends the message to every subscribed chat. HTML formatting allowed."
+        ),
+        "broadcast_started": "Broadcasting to {count} chat(s)…",
+        "broadcast_done": "Broadcast done: delivered {ok}/{total}, failed {failed}.",
+        "broadcast_no_subscribers": "No subscribed chats — nothing to broadcast.",
     },
     "uk": {
         "start_greeting": (
@@ -171,6 +178,13 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
         "permission_denied": "Немає дозволу.",
         "private_only": "Ця команда працює лише в приватному чаті з ботом.",
         "n_a": "немає",
+        "broadcast_usage": (
+            "Використання: /broadcast <повідомлення>\n"
+            "Розішле повідомлення всім підписаним чатам. Можна використовувати HTML."
+        ),
+        "broadcast_started": "Розсилка до {count} чат(ів)…",
+        "broadcast_done": "Розсилка завершена: доставлено {ok}/{total}, не вдалося {failed}.",
+        "broadcast_no_subscribers": "Немає підписаних чатів — нікого розсилати.",
     },
     "ru": {
         "start_greeting": (
@@ -245,6 +259,13 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
         "permission_denied": "Нет доступа.",
         "private_only": "Эта команда работает только в приватном чате с ботом.",
         "n_a": "нет",
+        "broadcast_usage": (
+            "Использование: /broadcast <сообщение>\n"
+            "Разошлёт сообщение всем подписанным чатам. Поддерживается HTML."
+        ),
+        "broadcast_started": "Рассылка в {count} чат(ов)…",
+        "broadcast_done": "Рассылка завершена: доставлено {ok}/{total}, не удалось {failed}.",
+        "broadcast_no_subscribers": "Нет подписанных чатов — нечего рассылать.",
     },
 }
 

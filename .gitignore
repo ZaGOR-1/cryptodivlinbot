@@ -19,6 +19,9 @@ env/
 .env.local
 *.sqlite
 *.sqlite-*
+
+# Local SQLite snapshot directory used by the rotated backup job.
+/backups/
 *.db
 
 # Editor

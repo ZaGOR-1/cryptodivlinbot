@@ -66,6 +66,31 @@ def _get_float(
     return value
 
 
+def _get_int_set(name: str) -> frozenset[int]:
+    """Parse a comma-separated list of integers from ``${name}``.
+
+    Empty / unset → empty frozenset. Whitespace and a trailing comma are
+    tolerated. Anything that does not parse as an int raises ``ValueError``
+    so misconfiguration is caught at startup, not at first use.
+    """
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return frozenset()
+    out: set[int] = set()
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            out.add(int(token))
+        except ValueError as exc:
+            raise ValueError(
+                f"{name} must be a comma-separated list of integers; "
+                f"got {token!r} as one of the entries"
+            ) from exc
+    return frozenset(out)
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Validated runtime settings loaded from environment variables."""
@@ -84,6 +109,10 @@ class Settings:
     binance_base_url: str
     http_timeout_sec: float
     log_level: str
+    backup_dir: Path
+    backup_interval_min: int
+    backup_retention_count: int
+    admin_chat_ids: frozenset[int]
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -121,4 +150,10 @@ class Settings:
             ).rstrip("/"),
             http_timeout_sec=_get_float("HTTP_TIMEOUT_SEC", 10.0, lo=1.0, hi=120.0),
             log_level=_get_str("LOG_LEVEL", "INFO").upper(),
+            backup_dir=Path(_get_str("BACKUP_DIR", "backups")),
+            backup_interval_min=_get_int("BACKUP_INTERVAL_MIN", 60, lo=1, hi=10080),
+            backup_retention_count=_get_int(
+                "BACKUP_RETENTION_COUNT", 24, lo=1, hi=10000
+            ),
+            admin_chat_ids=_get_int_set("ADMIN_CHAT_IDS"),
         )

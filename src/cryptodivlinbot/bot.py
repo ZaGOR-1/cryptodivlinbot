@@ -352,6 +352,72 @@ async def _dispatch_spike(
     )
 
 
+async def broadcast_to_subscribers(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    text: str,
+    parse_mode: str | None = ParseMode.HTML,
+) -> tuple[int, int]:
+    """Send ``text`` to every subscribed chat with bounded concurrency.
+
+    Returns ``(ok, total)`` — number of chats that successfully received the
+    message and the total that were attempted. Long messages are split via
+    :func:`chunk_for_telegram`; if any chunk fails the rest is skipped for
+    that chat (so we don't spam half-broken broadcasts).
+    """
+    bot_ctx = get_bot_context(context.application)
+    chats = bot_ctx.state.list_subscribed_chats()
+    if not chats:
+        return (0, 0)
+
+    semaphore = asyncio.Semaphore(_DISPATCH_CONCURRENCY)
+    chunks = chunk_for_telegram(text)
+
+    async def _one(chat_id: int) -> bool:
+        def _on_forbidden(cid: int = chat_id) -> None:
+            bot_ctx.state.set_subscribed(cid, False)
+
+        async with semaphore:
+            for chunk in chunks:
+
+                async def _send(payload: str = chunk, cid: int = chat_id) -> None:
+                    await context.bot.send_message(
+                        chat_id=cid, text=payload, parse_mode=parse_mode
+                    )
+
+                ok = await _safe_send(
+                    _send, chat_id=chat_id, on_forbidden=_on_forbidden
+                )
+                if not ok:
+                    return False
+            return True
+
+    results = await asyncio.gather(
+        *(_one(chat.chat_id) for chat in chats),
+        return_exceptions=False,
+    )
+    return (sum(1 for r in results if r), len(results))
+
+
+async def backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Take a rotated SQLite backup. Errors are logged but never raised."""
+    bot_ctx = get_bot_context(context.application)
+    settings = bot_ctx.settings
+    try:
+        # Module-level import would create a cycle with the test harness,
+        # but a function-level one keeps ``backup`` discoverable for mypy.
+        from . import backup as backup_module
+
+        await asyncio.to_thread(
+            backup_module.run_backup,
+            db_path=settings.db_path,
+            backup_dir=settings.backup_dir,
+            retention_count=settings.backup_retention_count,
+        )
+    except Exception:  # noqa: BLE001 - never let the job loop die
+        logger.exception("Backup job failed")
+
+
 async def digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Broadcast the periodic digest to every subscribed chat."""
     bot_ctx = get_bot_context(context.application)
@@ -410,6 +476,7 @@ def _register_handlers(application: Application[Any, Any, Any, Any, Any, Any]) -
     application.add_handler(CommandHandler("setlang", cmd_handlers.setlang))
     application.add_handler(CommandHandler("setthreshold", cmd_handlers.setthreshold))
     application.add_handler(CommandHandler("ping", cmd_handlers.ping))
+    application.add_handler(CommandHandler("broadcast", cmd_handlers.broadcast))
     application.add_handler(CallbackQueryHandler(cb_handlers.on_callback))
     # Catch text messages that match a persistent reply-keyboard label and
     # route them to the matching command handler. Plain chat messages fall
@@ -439,12 +506,24 @@ async def _on_startup(application: Application[Any, Any, Any, Any, Any, Any]) ->
         first=settings.digest_interval_min * 60,
         name="digest_job",
     )
+    jq.run_repeating(
+        backup_job,
+        interval=settings.backup_interval_min * 60,
+        # Run the first backup soon after startup so even a short-lived
+        # process leaves at least one snapshot behind.
+        first=30,
+        name="backup_job",
+    )
     logger.info(
-        "Started: top_n=%d threshold=%.2f%% window=%dm digest=%dm",
+        "Started: top_n=%d threshold=%.2f%% window=%dm digest=%dm "
+        "backup=%dm retention=%d admins=%d",
         settings.top_n_coins,
         settings.spike_threshold_pct,
         settings.spike_window_min,
         settings.digest_interval_min,
+        settings.backup_interval_min,
+        settings.backup_retention_count,
+        len(settings.admin_chat_ids),
     )
 
 
