@@ -16,6 +16,11 @@ dev = [
     "ruff>=0.6.0,<0.7.0",
     "mypy>=1.11.0,<2.0.0",
 ]
+# Optional: Sentry / GlitchTip error tracking. Only needed if SENTRY_DSN
+# is set at runtime; the bot starts and runs fine without this extra.
+monitoring = [
+    "sentry-sdk>=2.0.0,<3.0.0",
+]
 
 [project.scripts]
 cryptodivlinbot = "cryptodivlinbot.bot:run"
@@ -57,4 +62,11 @@ pretty = true
 # confine that to market_data.py and don't propagate it.
 module = "cryptodivlinbot.market_data"
 disallow_any_decorated = false
+
+[[tool.mypy.overrides]]
+# sentry-sdk is an optional runtime dependency (extras = "monitoring").
+# When it isn't installed (e.g. in CI's default install) mypy can't
+# discover the module; we still want strict typing on our side.
+module = ["sentry_sdk", "sentry_sdk.*"]
+ignore_missing_imports = true
 

@@ -11,6 +11,7 @@ from telegram import (
     InlineKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
 )
 
 from .config import SUPPORTED_LANGUAGES
@@ -113,6 +114,15 @@ def main_reply_keyboard(language: str) -> ReplyKeyboardMarkup:
         [KeyboardButton(t("btn_help", language))],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
+
+
+def remove_reply_keyboard() -> ReplyKeyboardRemove:
+    """Hide the persistent reply keyboard for the next outgoing message.
+
+    Used by ``/forgetme`` so a deleted user doesn't keep seeing the
+    bot's button row hovering over their input area.
+    """
+    return ReplyKeyboardRemove()
 
 
 def match_reply_button(text: str) -> str | None:

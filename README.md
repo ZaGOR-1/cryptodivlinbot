@@ -77,6 +77,11 @@ present). Defaults are sensible — the only required variable is
 | `BACKUP_INTERVAL_MIN` | `60` | How often the bot snapshots the SQLite DB. |
 | `BACKUP_RETENTION_COUNT` | `24` | Maximum number of snapshots to retain. |
 | `ADMIN_CHAT_IDS` | _(empty)_ | Comma-separated chat ids allowed to use `/broadcast`. |
+| `PRIVACY_POLICY_URL` | _GitHub `docs/PRIVACY_POLICY.md`_ | URL the `/privacy` reply links to. |
+| `TERMS_OF_SERVICE_URL` | _GitHub `docs/TERMS_OF_SERVICE.md`_ | URL the `/terms` reply links to. |
+| `SENTRY_DSN` | _(empty)_ | Optional Sentry / GlitchTip DSN. Empty disables monitoring (graceful no-op). Requires `pip install '.[monitoring]'`. |
+| `SENTRY_ENVIRONMENT` | `production` | Sentry environment tag. |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.0` | Sentry performance traces sample rate (`0.0`–`1.0`). |
 
 ## Commands
 
@@ -93,6 +98,9 @@ present). Defaults are sensible — the only required variable is
 | `/setlang <en\|uk\|ru>` | Set the chat language directly. |
 | `/setthreshold <percent>` | Override the spike threshold for this chat. |
 | `/ping` | Health check (`pong`). |
+| `/privacy` | Short privacy summary plus link to the full [Privacy Policy](docs/PRIVACY_POLICY.md). |
+| `/terms` | Short Terms-of-Service summary plus link to the full [Terms](docs/TERMS_OF_SERVICE.md). |
+| `/forgetme` | GDPR right-to-be-forgotten. First call asks to confirm; `/forgetme yes` deletes everything tied to the chat. |
 | `/broadcast <text>` | **Admin only.** Send `<text>` (HTML allowed) to every subscribed chat. The chat id of the sender must appear in `ADMIN_CHAT_IDS`. |
 
 ## Project layout
@@ -162,6 +170,62 @@ ADMIN_CHAT_IDS=123456789
 
 Multiple admins are comma-separated. With `ADMIN_CHAT_IDS` empty (the
 default), `/broadcast` is fully disabled.
+
+## Privacy, Terms, and `/forgetme`
+
+The bot stores only the bare minimum it needs to talk to your chat —
+chat id, language, alert threshold, subscription state, and short-lived
+cooldown timestamps. No usernames, names, phone numbers, or message
+content is kept.
+
+- [`docs/PRIVACY_POLICY.md`](docs/PRIVACY_POLICY.md) — full policy in
+  English. Ukrainian and Russian translations live alongside as
+  `_UK.md` and `_RU.md`.
+- [`docs/TERMS_OF_SERVICE.md`](docs/TERMS_OF_SERVICE.md) — short ToS
+  in EN/UK/RU.
+- `/privacy` and `/terms` send a localized summary plus the link to
+  the URLs configured by `PRIVACY_POLICY_URL` and `TERMS_OF_SERVICE_URL`.
+- `/forgetme` is a two-step GDPR right-to-be-forgotten command. The
+  first call shows a confirmation prompt; `/forgetme yes` (or
+  `/forgetme y`) deletes the chat row and every cooldown row tied to
+  it. Shared `price_history` and `coins_meta` tables are not chat-scoped
+  and are intentionally left intact.
+
+If you self-host the documents on a website, override the two URLs:
+
+```env
+PRIVACY_POLICY_URL=https://your-domain.example/privacy.html
+TERMS_OF_SERVICE_URL=https://your-domain.example/terms.html
+```
+
+## Error monitoring (optional)
+
+The bot ships an opt-in [`monitoring`](src/cryptodivlinbot/monitoring.py)
+module that can forward unhandled exceptions to Sentry, GlitchTip, or
+any Sentry-protocol-compatible backend. It is disabled by default — the
+base install does not pull `sentry-sdk` and the bot starts and runs
+fine without it.
+
+To enable:
+
+1. Install the optional extra:
+   ```bash
+   pip install '.[monitoring]'
+   ```
+2. Set `SENTRY_DSN` (and optionally `SENTRY_ENVIRONMENT`,
+   `SENTRY_TRACES_SAMPLE_RATE`) in `.env`.
+3. Restart the bot. The startup log line confirms whether Sentry was
+   initialized; if `SENTRY_DSN` is set but `sentry-sdk` is missing,
+   the module logs a single warning and continues without monitoring
+   (no crash).
+
+The `LoggingIntegration` is wired with `level=INFO` / `event_level=None`,
+so logger calls become Sentry **breadcrumbs** (context around an error)
+but never standalone events on their own. Sentry events are produced
+exclusively by explicit `capture_exception(...)` calls — that way each
+event carries useful scope tags (`job=poll_job`, `update_type=...`) and
+we never get duplicate events for the same error. A global PTB error
+handler forwards every uncaught handler/job exception this way.
 
 ## Run with Docker
 

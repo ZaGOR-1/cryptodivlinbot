@@ -109,6 +109,11 @@ python -m cryptodivlinbot
 | `BACKUP_INTERVAL_MIN` | `60` | Як часто створюється копія БД (хв). |
 | `BACKUP_RETENTION_COUNT` | `24` | Скільки копій тримати. Старіші — видаляються. |
 | `ADMIN_CHAT_IDS` | _(порожньо)_ | Список chat id адмінів (через кому) для команди `/broadcast`. |
+| `PRIVACY_POLICY_URL` | _GitHub `docs/PRIVACY_POLICY.md`_ | Посилання, яке віддає `/privacy`. |
+| `TERMS_OF_SERVICE_URL` | _GitHub `docs/TERMS_OF_SERVICE.md`_ | Посилання, яке віддає `/terms`. |
+| `SENTRY_DSN` | _(порожньо)_ | DSN Sentry / GlitchTip. Порожнє = моніторинг вимкнено. Потребує `pip install '.[monitoring]'`. |
+| `SENTRY_ENVIRONMENT` | `production` | Тег середовища у Sentry. |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.0` | Частка трасування продуктивності (0.0 – 1.0). |
 
 > 💡 Якщо хочеш частіших алертів для тестів — постав `SPIKE_THRESHOLD_PCT=0.5`
 > та `POLL_INTERVAL_SEC=30`. Просто не забудь повернути на робочі значення.
@@ -132,6 +137,9 @@ python -m cryptodivlinbot
 | `/setthreshold <percent>` | Свій поріг сплеску для цього чату (`0.1` – `100`). |
 | `/ping` | Перевірка стану — має відповісти `pong`. |
 | `/broadcast <текст>` | **Лише для адмінів.** Розсилає `<текст>` (з HTML-розміткою) усім підписаним чатам. Доступна лише chat id, які вказано в `ADMIN_CHAT_IDS`. |
+| `/privacy` | Коротко: які дані бот зберігає, плюс посилання на повну [Політику конфіденційності](./PRIVACY_POLICY_UK.md). |
+| `/terms` | Коротко: умови користування, плюс посилання на повний [текст](./TERMS_OF_SERVICE_UK.md). |
+| `/forgetme` | GDPR-видалення даних. Перший виклик — підтвердження; `/forgetme yes` остаточно стирає все, що бот зберігає про чат. |
 
 ---
 
