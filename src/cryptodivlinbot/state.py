@@ -219,6 +219,23 @@ class State:
             ).fetchall()
         return [_row_to_chat(r) for r in rows]
 
+    def delete_chat(self, chat_id: int) -> bool:
+        """Erase every row tied to ``chat_id``. Returns ``True`` if a chat row existed.
+
+        Removes from the ``chats`` and ``last_alerts`` tables. The shared
+        ``price_history`` and ``coins_meta`` tables are not chat-scoped so
+        they are intentionally left intact.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM chats WHERE chat_id = ?", (chat_id,)
+            )
+            existed = cur.rowcount > 0
+            self._conn.execute(
+                "DELETE FROM last_alerts WHERE chat_id = ?", (chat_id,)
+            )
+        return existed
+
     # ------------------------------------------------------------------
     # Price history
     # ------------------------------------------------------------------

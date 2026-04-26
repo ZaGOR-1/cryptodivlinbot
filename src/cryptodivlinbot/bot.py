@@ -43,6 +43,7 @@ from .handlers import callbacks as cb_handlers
 from .handlers import commands as cmd_handlers
 from .i18n import t
 from .market_data import CoinSnapshot, MarketDataClient, MarketDataError
+from .monitoring import capture_exception, init_sentry
 from .state import State
 
 logger = logging.getLogger(__name__)
@@ -242,8 +243,9 @@ async def poll_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     except MarketDataError as exc:
         logger.warning("Market data unavailable this cycle: %s", exc)
         return
-    except Exception:  # noqa: BLE001 - never let job loop die
+    except Exception as exc:  # noqa: BLE001 - never let job loop die
         logger.exception("Unexpected error fetching market data")
+        capture_exception(exc, job="poll_job")
         return
 
     now_ts = time.time()
@@ -414,8 +416,9 @@ async def backup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             backup_dir=settings.backup_dir,
             retention_count=settings.backup_retention_count,
         )
-    except Exception:  # noqa: BLE001 - never let the job loop die
+    except Exception as exc:  # noqa: BLE001 - never let the job loop die
         logger.exception("Backup job failed")
+        capture_exception(exc, job="backup_job")
 
 
 async def digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -476,6 +479,9 @@ def _register_handlers(application: Application[Any, Any, Any, Any, Any, Any]) -
     application.add_handler(CommandHandler("setlang", cmd_handlers.setlang))
     application.add_handler(CommandHandler("setthreshold", cmd_handlers.setthreshold))
     application.add_handler(CommandHandler("ping", cmd_handlers.ping))
+    application.add_handler(CommandHandler("privacy", cmd_handlers.privacy))
+    application.add_handler(CommandHandler("terms", cmd_handlers.terms))
+    application.add_handler(CommandHandler("forgetme", cmd_handlers.forgetme))
     application.add_handler(CommandHandler("broadcast", cmd_handlers.broadcast))
     application.add_handler(CallbackQueryHandler(cb_handlers.on_callback))
     # Catch text messages that match a persistent reply-keyboard label and
@@ -484,6 +490,25 @@ def _register_handlers(application: Application[Any, Any, Any, Any, Any, Any]) -
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_handlers.on_reply_button)
     )
+    application.add_error_handler(_on_error)
+
+
+async def _on_error(
+    update: object, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Forward any uncaught handler exception to Sentry (if configured) and log it.
+
+    PTB calls this when a handler / job raises. We deliberately keep it
+    very small: log a structured exception and let Sentry capture it. The
+    user-facing handler is responsible for graceful UI feedback when
+    relevant — this hook is for *unexpected* failures.
+    """
+    err = context.error
+    if err is None:  # defensive: PTB always populates this in practice
+        return
+    update_type = type(update).__name__ if update is not None else "unknown"
+    logger.exception("Unhandled error while processing %s", update_type, exc_info=err)
+    capture_exception(err, update_type=update_type)
 
 
 async def _on_startup(application: Application[Any, Any, Any, Any, Any, Any]) -> None:
@@ -582,6 +607,14 @@ def run() -> None:
     """Blocking entry point used by ``python -m cryptodivlinbot`` and the console script."""
     settings = Settings.from_env()
     _configure_logging(settings.log_level)
+    # Initialize Sentry as early as possible so even errors during
+    # application construction get reported. No-op when SENTRY_DSN is
+    # empty.
+    init_sentry(
+        dsn=settings.sentry_dsn,
+        environment=settings.sentry_environment,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+    )
     application = build_application(settings)
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 

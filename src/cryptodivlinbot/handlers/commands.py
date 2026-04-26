@@ -235,6 +235,61 @@ async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(t("pong", chat.language))
 
 
+async def privacy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show a short privacy summary plus the link to the full document."""
+    chat = _resolve_chat(update, context)
+    if chat is None or update.effective_message is None:
+        return
+    bot_ctx = _ctx(context)
+    await update.effective_message.reply_text(
+        t("privacy_policy", chat.language, url=bot_ctx.settings.privacy_policy_url),
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
+    )
+
+
+async def terms(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show a short ToS summary plus the link to the full document."""
+    chat = _resolve_chat(update, context)
+    if chat is None or update.effective_message is None:
+        return
+    bot_ctx = _ctx(context)
+    await update.effective_message.reply_text(
+        t("terms_of_service", chat.language, url=bot_ctx.settings.terms_of_service_url),
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
+    )
+
+
+async def forgetme(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """GDPR-style data-deletion command. Two-step to avoid accidents.
+
+    First call (``/forgetme``) shows a confirmation prompt. Second call
+    (``/forgetme yes``) actually deletes every row tied to the chat id.
+    """
+    chat = _resolve_chat(update, context)
+    if chat is None or update.effective_message is None:
+        return
+    bot_ctx = _ctx(context)
+
+    args = context.args or []
+    confirmed = bool(args) and args[0].strip().lower() in {"yes", "y"}
+    if not confirmed:
+        await update.effective_message.reply_text(
+            t("forget_confirm", chat.language),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    bot_ctx.state.delete_chat(chat.chat_id)
+    # The chat row is gone, so we no longer have a stored language; reply
+    # in whatever language the chat was using right before the delete.
+    await update.effective_message.reply_text(
+        t("forget_done", chat.language),
+        reply_markup=keyboards.remove_reply_keyboard(),
+    )
+
+
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin-only: relay the rest of the message to every subscribed chat.
 

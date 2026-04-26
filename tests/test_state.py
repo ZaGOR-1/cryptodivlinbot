@@ -125,6 +125,32 @@ def test_migrations_apply_to_legacy_unversioned_db(tmp_path):
     assert state.get_chat(42) is not None
 
 
+def test_delete_chat_wipes_chat_and_cooldowns(tmp_path):
+    """``delete_chat`` removes the chat row and all its cooldown rows."""
+    state = State(tmp_path / "del.sqlite")
+    state.upsert_chat(42, default_language="en")
+    state.set_subscribed(42, True)
+    state.set_last_alert_ts(42, "bitcoin", 100.0)
+    state.set_last_alert_ts(42, "ethereum", 200.0)
+    # Sibling chat that must survive the delete.
+    state.upsert_chat(99, default_language="ru")
+    state.set_last_alert_ts(99, "bitcoin", 300.0)
+
+    existed = state.delete_chat(42)
+    assert existed is True
+    assert state.get_chat(42) is None
+    assert state.get_last_alert_ts(42, "bitcoin") is None
+    assert state.get_last_alert_ts(42, "ethereum") is None
+    # Untouched neighbour
+    assert state.get_chat(99) is not None
+    assert state.get_last_alert_ts(99, "bitcoin") == 300.0
+
+
+def test_delete_chat_returns_false_when_chat_missing(tmp_path):
+    state = State(tmp_path / "del.sqlite")
+    assert state.delete_chat(404) is False
+
+
 def test_last_alerts_unique_per_chat_and_coin(tmp_path):
     """The cooldown table must allow exactly one row per (chat, coin)."""
     state = State(tmp_path / "uniq.sqlite")

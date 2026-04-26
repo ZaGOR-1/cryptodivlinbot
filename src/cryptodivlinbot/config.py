@@ -113,6 +113,11 @@ class Settings:
     backup_interval_min: int
     backup_retention_count: int
     admin_chat_ids: frozenset[int]
+    privacy_policy_url: str
+    terms_of_service_url: str
+    sentry_dsn: str | None
+    sentry_environment: str
+    sentry_traces_sample_rate: float
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -156,4 +161,17 @@ class Settings:
                 "BACKUP_RETENTION_COUNT", 24, lo=1, hi=10000
             ),
             admin_chat_ids=_get_int_set("ADMIN_CHAT_IDS"),
+            privacy_policy_url=_get_str(
+                "PRIVACY_POLICY_URL",
+                "https://github.com/ZaGOR-1/cryptodivlinbot/blob/main/docs/PRIVACY_POLICY.md",
+            ),
+            terms_of_service_url=_get_str(
+                "TERMS_OF_SERVICE_URL",
+                "https://github.com/ZaGOR-1/cryptodivlinbot/blob/main/docs/TERMS_OF_SERVICE.md",
+            ),
+            sentry_dsn=os.getenv("SENTRY_DSN") or None,
+            sentry_environment=_get_str("SENTRY_ENVIRONMENT", "production"),
+            sentry_traces_sample_rate=_get_float(
+                "SENTRY_TRACES_SAMPLE_RATE", 0.0, lo=0.0, hi=1.0
+            ),
         )

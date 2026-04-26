@@ -86,6 +86,11 @@ def _make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         backup_interval_min=60,
         backup_retention_count=24,
         admin_chat_ids=frozenset(),
+        privacy_policy_url="https://example.test/privacy",
+        terms_of_service_url="https://example.test/terms",
+        sentry_dsn=None,
+        sentry_environment="test",
+        sentry_traces_sample_rate=0.0,
     )
     base.update(overrides)
     return Settings(**base)

@@ -29,7 +29,9 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
             "Hi! I track the top-{top_n} cryptocurrencies and send you alerts when "
             "the price moves more than {threshold}% within {window} min, plus a "
             "regular digest every {digest} min.\n\n"
-            "Use the buttons below or /help to see all commands."
+            "Use the buttons below or /help to see all commands.\n\n"
+            "By using this bot you agree to /terms. See /privacy for what "
+            "data is stored and /forgetme to delete it."
         ),
         "help": (
             "Commands:\n"
@@ -44,7 +46,10 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
             "/language — choose interface language\n"
             "/setlang <en|uk|ru> — set language directly\n"
             "/setthreshold <percent> — change spike threshold for this chat\n"
-            "/ping — health check"
+            "/ping — health check\n"
+            "/privacy — privacy policy\n"
+            "/terms — terms of service\n"
+            "/forgetme — delete all data this bot stores about your chat"
         ),
         "menu_title": "Quick actions:",
         "btn_subscribe": "🔔 Subscribe",
@@ -104,13 +109,43 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
         "broadcast_started": "Broadcasting to {count} chat(s)…",
         "broadcast_done": "Broadcast done: delivered {ok}/{total}, failed {failed}.",
         "broadcast_no_subscribers": "No subscribed chats — nothing to broadcast.",
+        "privacy_policy": (
+            "<b>Privacy policy</b>\n\n"
+            "This bot stores only what it needs to talk to your chat: your "
+            "chat id, language, alert threshold, subscription state, and "
+            "short-lived cooldown timestamps. No usernames, names, phone "
+            "numbers, or message contents are kept.\n\n"
+            "To delete <i>all</i> data the bot has about you, send /forgetme.\n\n"
+            "Full text: {url}"
+        ),
+        "terms_of_service": (
+            "<b>Terms of service</b>\n\n"
+            "This bot is provided as-is. Information delivered is for "
+            "informational purposes only and is <b>not</b> financial "
+            "advice. The operator is not liable for trading losses or "
+            "data inaccuracies.\n\n"
+            "Full text: {url}"
+        ),
+        "forget_confirm": (
+            "⚠️ This will <b>permanently delete</b> everything this bot "
+            "stores about your chat (subscription, language, threshold, "
+            "cooldowns). It cannot be undone.\n\n"
+            "To confirm, send <code>/forgetme yes</code>."
+        ),
+        "forget_done": (
+            "All data tied to this chat has been deleted. The bot will "
+            "stop messaging you. Send /start any time to use the bot "
+            "again under fresh defaults."
+        ),
     },
     "uk": {
         "start_greeting": (
             "Привіт! Я відстежую топ-{top_n} криптовалют і надсилаю алерти, коли "
             "ціна змінюється більше ніж на {threshold}% за {window} хв, а також "
             "регулярний дайджест кожні {digest} хв.\n\n"
-            "Користуйся кнопками нижче або /help, щоб побачити всі команди."
+            "Користуйся кнопками нижче або /help, щоб побачити всі команди.\n\n"
+            "Користуючись ботом, ви погоджуєтесь з /terms. Див. /privacy щодо "
+            "даних, які зберігаються, та /forgetme для їх видалення."
         ),
         "help": (
             "Команди:\n"
@@ -125,7 +160,10 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
             "/language — вибрати мову інтерфейсу\n"
             "/setlang <en|uk|ru> — встановити мову напряму\n"
             "/setthreshold <percent> — змінити поріг сплеску для цього чату\n"
-            "/ping — перевірка стану"
+            "/ping — перевірка стану\n"
+            "/privacy — політика конфіденційності\n"
+            "/terms — умови користування\n"
+            "/forgetme — видалити всі дані, які бот зберігає про ваш чат"
         ),
         "menu_title": "Швидкі дії:",
         "btn_subscribe": "🔔 Підписатися",
@@ -185,13 +223,41 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
         "broadcast_started": "Розсилка до {count} чат(ів)…",
         "broadcast_done": "Розсилка завершена: доставлено {ok}/{total}, не вдалося {failed}.",
         "broadcast_no_subscribers": "Немає підписаних чатів — нікого розсилати.",
+        "privacy_policy": (
+            "<b>Політика конфіденційності</b>\n\n"
+            "Бот зберігає лише те, що потрібно для роботи з вашим чатом: "
+            "chat id, мову, поріг алертів, стан підписки та короткочасні "
+            "кулдауни. Жодних імен, прізвищ, телефонів чи текстів "
+            "повідомлень не зберігається.\n\n"
+            "Щоб <i>повністю</i> видалити всі дані — надішліть /forgetme.\n\n"
+            "Повний текст: {url}"
+        ),
+        "terms_of_service": (
+            "<b>Умови користування</b>\n\n"
+            "Бот надається як є. Інформація має лише довідковий характер "
+            "і <b>не</b> є фінансовою порадою. Оператор не несе "
+            "відповідальності за торгові збитки чи неточності даних.\n\n"
+            "Повний текст: {url}"
+        ),
+        "forget_confirm": (
+            "⚠️ Це <b>остаточно видалить</b> усе, що бот зберігає про "
+            "ваш чат (підписку, мову, поріг, кулдауни). Дія незворотна.\n\n"
+            "Для підтвердження надішліть <code>/forgetme yes</code>."
+        ),
+        "forget_done": (
+            "Усі дані, повʼязані з цим чатом, видалено. Бот більше не "
+            "надсилатиме вам повідомлень. Надішліть /start у будь-який "
+            "момент, щоб почати знову з типових налаштувань."
+        ),
     },
     "ru": {
         "start_greeting": (
             "Привет! Я отслеживаю топ-{top_n} криптовалют и присылаю алерты, когда "
             "цена меняется более чем на {threshold}% за {window} мин, а также "
             "регулярный дайджест каждые {digest} мин.\n\n"
-            "Используй кнопки ниже или /help, чтобы увидеть все команды."
+            "Используй кнопки ниже или /help, чтобы увидеть все команды.\n\n"
+            "Пользуясь ботом, вы соглашаетесь с /terms. См. /privacy про данные, "
+            "которые хранятся, и /forgetme для их удаления."
         ),
         "help": (
             "Команды:\n"
@@ -206,7 +272,10 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
             "/language — выбрать язык интерфейса\n"
             "/setlang <en|uk|ru> — установить язык напрямую\n"
             "/setthreshold <percent> — изменить порог скачка для этого чата\n"
-            "/ping — проверка состояния"
+            "/ping — проверка состояния\n"
+            "/privacy — политика конфиденциальности\n"
+            "/terms — условия использования\n"
+            "/forgetme — удалить все данные, которые бот хранит о вашем чате"
         ),
         "menu_title": "Быстрые действия:",
         "btn_subscribe": "🔔 Подписаться",
@@ -266,6 +335,34 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
         "broadcast_started": "Рассылка в {count} чат(ов)…",
         "broadcast_done": "Рассылка завершена: доставлено {ok}/{total}, не удалось {failed}.",
         "broadcast_no_subscribers": "Нет подписанных чатов — нечего рассылать.",
+        "privacy_policy": (
+            "<b>Политика конфиденциальности</b>\n\n"
+            "Бот хранит только то, что нужно для работы с вашим чатом: "
+            "chat id, язык, порог алертов, состояние подписки и "
+            "кратковременные кулдауны. Никаких имён, телефонов или "
+            "текстов сообщений не сохраняется.\n\n"
+            "Чтобы <i>полностью</i> удалить все данные — отправьте /forgetme.\n\n"
+            "Полный текст: {url}"
+        ),
+        "terms_of_service": (
+            "<b>Условия использования</b>\n\n"
+            "Бот предоставляется как есть. Информация носит справочный "
+            "характер и <b>не</b> является финансовым советом. Оператор "
+            "не несёт ответственности за торговые убытки или неточность "
+            "данных.\n\n"
+            "Полный текст: {url}"
+        ),
+        "forget_confirm": (
+            "⚠️ Это <b>безвозвратно удалит</b> всё, что бот хранит о "
+            "вашем чате (подписку, язык, порог, кулдауны). Действие "
+            "необратимо.\n\n"
+            "Для подтверждения отправьте <code>/forgetme yes</code>."
+        ),
+        "forget_done": (
+            "Все данные, связанные с этим чатом, удалены. Бот больше не "
+            "будет писать вам. Отправьте /start в любой момент, чтобы "
+            "начать заново с настройками по умолчанию."
+        ),
     },
 }
 

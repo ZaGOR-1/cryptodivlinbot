@@ -350,3 +350,87 @@ schema upgrade-safe.
   semantics). USAGE_UK.md and USAGE_RU.md mirror the new env vars and
   command in their parameter / command tables.
 - Total: 126 tests passing, `ruff` and `mypy --strict` green.
+
+### Added (Privacy/ToS + Sentry monitoring)
+- **Privacy Policy / Terms of Service**: full Markdown documents for
+  EN/UK/RU under `docs/PRIVACY_POLICY*.md` and `docs/TERMS_OF_SERVICE*.md`.
+  The privacy policy enumerates exactly which fields are stored
+  (chat id, language, threshold, subscription state, last-alert
+  timestamps), retention horizons (per-chat data until `/forgetme` or
+  `/unsubscribe`; rolling 24-hour price history; auto-expiring
+  cooldown timestamps), and the user's GDPR rights. The terms cover
+  acceptable use, the explicit "not financial advice" disclaimer, and
+  the operator's liability limits.
+- **`/privacy`, `/terms`, and `/forgetme` commands**:
+  - `/privacy` — short HTML-formatted summary plus a clickable link to
+    the full document configured via `PRIVACY_POLICY_URL`.
+  - `/terms` — the same shape for the ToS, configured via
+    `TERMS_OF_SERVICE_URL`.
+  - `/forgetme` — two-step GDPR right-to-be-forgotten command. The
+    first call shows a confirmation prompt; `/forgetme yes` (or
+    `/forgetme y`) actually deletes everything tied to the chat
+    (`chats` row + every `last_alerts` row). The bot's persistent
+    reply keyboard is dismissed on completion via
+    `ReplyKeyboardRemove`.
+- **`Settings.privacy_policy_url`** and **`Settings.terms_of_service_url`**:
+  defaulted to the markdown files in this repository on `main`. Override
+  with `PRIVACY_POLICY_URL` / `TERMS_OF_SERVICE_URL` env vars when
+  hosting the documents elsewhere.
+- **`State.delete_chat(chat_id)`**: irreversibly drops the chat row and
+  every cooldown row tied to that chat. Returns whether the chat
+  existed. The shared `price_history` and `coins_meta` tables are
+  intentionally left intact since they are not chat-scoped.
+- **`monitoring` module**: optional Sentry / GlitchTip integration.
+  `init_sentry(*, dsn, environment, traces_sample_rate, release=None)`
+  is idempotent, no-ops when the DSN is empty, and warns (without
+  crashing) when `SENTRY_DSN` is set but `sentry-sdk` was not installed.
+  `capture_exception(exc, **scope)` forwards the exception with optional
+  scope tags or silently no-ops when uninitialized. `is_initialized()`
+  exposes the global flag for tests/diagnostics. The `LoggingIntegration`
+  is wired with `level=INFO` and `event_level=ERROR` so existing
+  `logger.exception()` calls become Sentry events automatically.
+- **`Settings.sentry_dsn`** / **`sentry_environment`** /
+  **`sentry_traces_sample_rate`**: three new env-backed knobs. DSN
+  empty by default — leaving the bot a graceful no-op for users who
+  don't want monitoring. Sample rate is range-checked to `[0.0, 1.0]`.
+- **Optional `[monitoring]` extras**: install with
+  `pip install '.[monitoring]'`. Pulls `sentry-sdk>=2.0,<3.0`. The base
+  install does NOT pull sentry-sdk, so production deploys without
+  monitoring stay slim.
+- **Sentry init wiring** in `bot.run()` — happens before
+  `build_application()` so even errors during startup get captured.
+  A global `application.add_error_handler` forwards every uncaught
+  handler/job exception to `capture_exception` with an
+  `update_type=...` scope tag, in addition to the existing
+  `logger.exception(...)` log line.
+- **`/start` and `/help`** updated in EN/UK/RU to mention `/privacy`,
+  `/terms`, and `/forgetme`.
+
+### Tests
+- `tests/test_monitoring.py` — 7 tests covering: empty-DSN no-op,
+  warn-and-continue when `sentry-sdk` is missing, happy-path init with
+  a stubbed `sentry_sdk` (asserting DSN/env/traces_sample_rate/release/
+  send_default_pii), idempotent init, no-op `capture_exception` when
+  uninitialized, and `capture_exception` forwarding the exception and
+  scope tags to a stubbed `push_scope().set_tag()`.
+- `tests/test_privacy_commands.py` — 6 async handler tests covering:
+  `/privacy` and `/terms` reply text, parse mode, and configured URL;
+  `/forgetme` first-call confirmation prompt; `/forgetme yes` actually
+  deleting the chat row and last-alert rows and dismissing the reply
+  keyboard; `/forgetme Y` alternate-confirmation; and
+  `/forgetme please` not deleting anything (still asks for `yes`).
+- `tests/test_state.py` — 2 new tests for `delete_chat`: verifies the
+  chat row + its `last_alerts` rows are gone while a sibling chat
+  survives; and that calling on a missing chat returns `False` rather
+  than raising.
+- `tests/test_broadcast.py` — `_make_settings` extended with the five
+  new fields so the existing six broadcast tests continue to pass.
+- Total: **141 tests passing**, `ruff` and `mypy --strict` green.
+
+### Docs / config
+- `.env.example` documents `PRIVACY_POLICY_URL`, `TERMS_OF_SERVICE_URL`,
+  `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, and `SENTRY_TRACES_SAMPLE_RATE`,
+  including the install hint for the optional extra.
+- `pyproject.toml` declares the `monitoring` extras and a
+  `[[tool.mypy.overrides]]` block for `sentry_sdk*` so strict type
+  checking still passes when the optional dependency isn't installed.
