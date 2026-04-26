@@ -161,7 +161,7 @@ def test_capture_exception_forwards_to_sentry_with_scope(
             captured_excs.append(exc)
 
         @staticmethod
-        def push_scope() -> _FakeScope:
+        def new_scope() -> _FakeScope:
             return _FakeScope()
 
     class _FakeIntegration:

@@ -387,8 +387,10 @@ schema upgrade-safe.
   `capture_exception(exc, **scope)` forwards the exception with optional
   scope tags or silently no-ops when uninitialized. `is_initialized()`
   exposes the global flag for tests/diagnostics. The `LoggingIntegration`
-  is wired with `level=INFO` and `event_level=ERROR` so existing
-  `logger.exception()` calls become Sentry events automatically.
+  is wired with `level=INFO` and `event_level=None` so logger calls
+  become Sentry breadcrumbs but never standalone events — Sentry events
+  are produced exclusively by explicit `capture_exception(...)` calls,
+  which keeps event counts honest and preserves scope tags.
 - **`Settings.sentry_dsn`** / **`sentry_environment`** /
   **`sentry_traces_sample_rate`**: three new env-backed knobs. DSN
   empty by default — leaving the bot a graceful no-op for users who

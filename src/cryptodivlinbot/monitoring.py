@@ -110,7 +110,10 @@ def capture_exception(exc: BaseException, **scope: Any) -> None:
     except ImportError:  # pragma: no cover - already filtered by init
         return
     if scope:
-        with sentry_sdk.push_scope() as s:
+        # ``new_scope()`` is the sentry-sdk 2.x replacement for the
+        # deprecated ``push_scope()`` and has the same context-manager
+        # surface. We pin sentry-sdk>=2.0,<3.0 in pyproject.
+        with sentry_sdk.new_scope() as s:
             for key, value in scope.items():
                 s.set_tag(key, value)
             sentry_sdk.capture_exception(exc)

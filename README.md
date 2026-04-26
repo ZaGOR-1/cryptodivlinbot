@@ -219,11 +219,13 @@ To enable:
    the module logs a single warning and continues without monitoring
    (no crash).
 
-The `LoggingIntegration` is wired with `level=INFO` /
-`event_level=ERROR`, so existing `logger.exception(...)` calls become
-Sentry events automatically. A global PTB error handler additionally
-forwards every uncaught handler/job exception with an `update_type=...`
-scope tag.
+The `LoggingIntegration` is wired with `level=INFO` / `event_level=None`,
+so logger calls become Sentry **breadcrumbs** (context around an error)
+but never standalone events on their own. Sentry events are produced
+exclusively by explicit `capture_exception(...)` calls — that way each
+event carries useful scope tags (`job=poll_job`, `update_type=...`) and
+we never get duplicate events for the same error. A global PTB error
+handler forwards every uncaught handler/job exception this way.
 
 ## Run with Docker
 
