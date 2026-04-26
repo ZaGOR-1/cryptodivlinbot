@@ -67,12 +67,14 @@ def init_sentry(
         environment=environment,
         traces_sample_rate=traces_sample_rate,
         release=release or f"cryptodivlinbot@{__version__}",
-        # ``logger.exception()`` calls already go through Python logging;
-        # the LoggingIntegration captures ERROR-and-above as Sentry events
-        # and INFO-and-above as breadcrumbs so we get context around any
-        # crash (the last few API calls, polling cycles, etc.).
+        # Use the LoggingIntegration only for breadcrumbs (INFO and up),
+        # NOT for event creation. Bot job/handler errors are forwarded
+        # explicitly via :func:`capture_exception` so they carry useful
+        # scope tags (``job=poll_job``, ``update_type=...``). Letting the
+        # integration also turn every ``logger.exception()`` call into a
+        # Sentry event would produce duplicate events for every error.
         integrations=[
-            LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+            LoggingIntegration(level=logging.INFO, event_level=None),
         ],
         # The bot stores chat ids per user; redact them from default PII
         # capture. Sentry's ``send_default_pii`` is False by default, but

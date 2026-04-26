@@ -7,7 +7,7 @@ the smallest fakes that satisfy the call-sites — no real Telegram
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -132,6 +132,46 @@ def _make_context_and_update(
     )
     ctx = _FakeContext(application=app, args=args)
     return update, ctx, bot_ctx
+
+
+def _make_settings_with_url(tmp_path: Path, *, privacy_url: str, terms_url: str) -> Settings:
+    return replace(
+        _make_settings(tmp_path),
+        privacy_policy_url=privacy_url,
+        terms_of_service_url=terms_url,
+    )
+
+
+@pytest.mark.asyncio
+async def test_privacy_escapes_html_special_chars_in_url(tmp_path: Path) -> None:
+    """URLs are interpolated into HTML messages, so ``&``/``<``/``>`` must be escaped."""
+    update, ctx, bot_ctx = _make_context_and_update(tmp_path)
+    # Replace settings with one whose URL contains characters that
+    # Telegram's HTML parser treats as entities.
+    bot_ctx.settings = _make_settings_with_url(
+        tmp_path,
+        privacy_url="https://example.test/privacy.html?lang=en&v=2",
+        terms_url="https://example.test/terms.html?lang=en&v=2",
+    )
+    await cmd_handlers.privacy(update, ctx)  # type: ignore[arg-type]
+    reply = update.effective_message.replies[0]
+    # Raw ``&`` would be parsed as the start of an HTML entity by
+    # Telegram and either reject the message or render incorrectly.
+    assert "&amp;v=2" in reply.text
+    assert "&v=2" not in reply.text.replace("&amp;v=2", "")
+
+
+@pytest.mark.asyncio
+async def test_terms_escapes_html_special_chars_in_url(tmp_path: Path) -> None:
+    update, ctx, bot_ctx = _make_context_and_update(tmp_path)
+    bot_ctx.settings = _make_settings_with_url(
+        tmp_path,
+        privacy_url="https://example.test/p?a=1&b=2",
+        terms_url="https://example.test/t?a=1&b=2",
+    )
+    await cmd_handlers.terms(update, ctx)  # type: ignore[arg-type]
+    reply = update.effective_message.replies[0]
+    assert "&amp;b=2" in reply.text
 
 
 @pytest.mark.asyncio

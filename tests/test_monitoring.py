@@ -62,7 +62,7 @@ def test_init_sentry_initializes_when_dsn_provided(
             captured.update(kwargs)
 
     class _FakeIntegration:
-        def __init__(self, *, level: int, event_level: int) -> None:
+        def __init__(self, *, level: int, event_level: int | None) -> None:
             captured["integration_level"] = level
             captured["integration_event_level"] = event_level
 
@@ -90,6 +90,12 @@ def test_init_sentry_initializes_when_dsn_provided(
     assert captured["traces_sample_rate"] == 0.25
     assert captured["release"] == "cryptodivlinbot@0.2.0"
     assert captured["send_default_pii"] is False
+    # The LoggingIntegration must not turn logger.exception() into a
+    # Sentry event — otherwise every explicit capture_exception() call
+    # in bot.py produces a duplicate. event_level=None disables event
+    # creation while still keeping INFO+ logs as breadcrumbs.
+    assert captured["integration_level"] == logging.INFO
+    assert captured["integration_event_level"] is None
 
 
 def test_init_sentry_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -102,7 +108,7 @@ def test_init_sentry_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
             init_calls.append(kwargs)
 
     class _FakeIntegration:
-        def __init__(self, *, level: int, event_level: int) -> None:
+        def __init__(self, *, level: int, event_level: int | None) -> None:
             pass
 
     fake_logging_module = type(sys)("sentry_sdk.integrations.logging")
@@ -159,7 +165,7 @@ def test_capture_exception_forwards_to_sentry_with_scope(
             return _FakeScope()
 
     class _FakeIntegration:
-        def __init__(self, *, level: int, event_level: int) -> None:
+        def __init__(self, *, level: int, event_level: int | None) -> None:
             pass
 
     fake_logging_module = type(sys)("sentry_sdk.integrations.logging")
@@ -194,7 +200,7 @@ def test_capture_exception_without_scope(monkeypatch: pytest.MonkeyPatch) -> Non
             captured_excs.append(exc)
 
     class _FakeIntegration:
-        def __init__(self, *, level: int, event_level: int) -> None:
+        def __init__(self, *, level: int, event_level: int | None) -> None:
             pass
 
     fake_logging_module = type(sys)("sentry_sdk.integrations.logging")

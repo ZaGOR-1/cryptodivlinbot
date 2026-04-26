@@ -16,7 +16,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from .. import keyboards
-from ..alerts import format_price, format_signed_pct
+from ..alerts import escape_html, format_price, format_signed_pct
 from ..config import SUPPORTED_LANGUAGES
 from ..i18n import LANGUAGE_NAMES, t
 from ..state import ChatPrefs
@@ -241,8 +241,15 @@ async def privacy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if chat is None or update.effective_message is None:
         return
     bot_ctx = _ctx(context)
+    # ``parse_mode=HTML`` means the URL is rendered raw; escape it so a
+    # query string with ``&`` (or any ``<``/``>``) doesn't get parsed as an
+    # HTML entity by Telegram and reject the whole message.
     await update.effective_message.reply_text(
-        t("privacy_policy", chat.language, url=bot_ctx.settings.privacy_policy_url),
+        t(
+            "privacy_policy",
+            chat.language,
+            url=escape_html(bot_ctx.settings.privacy_policy_url),
+        ),
         parse_mode=ParseMode.HTML,
         disable_web_page_preview=True,
     )
@@ -255,7 +262,11 @@ async def terms(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     bot_ctx = _ctx(context)
     await update.effective_message.reply_text(
-        t("terms_of_service", chat.language, url=bot_ctx.settings.terms_of_service_url),
+        t(
+            "terms_of_service",
+            chat.language,
+            url=escape_html(bot_ctx.settings.terms_of_service_url),
+        ),
         parse_mode=ParseMode.HTML,
         disable_web_page_preview=True,
     )
