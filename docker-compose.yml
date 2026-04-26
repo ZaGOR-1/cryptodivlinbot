@@ -15,6 +15,10 @@ services:
     environment:
       # Pin the DB path inside the container; must match the mount below.
       DB_PATH: /data/cryptodivlinbot.sqlite
+      # Snapshots live alongside the live DB on the same persistent volume,
+      # so a `docker compose down -v` wipes both — but a normal restart
+      # leaves the rotated history intact.
+      BACKUP_DIR: /data/backups
     volumes:
       - cryptodivlinbot_data:/data
     # Honour the HEALTHCHECK declared in the Dockerfile.

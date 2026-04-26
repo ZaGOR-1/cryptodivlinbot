@@ -235,6 +235,66 @@ async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(t("pong", chat.language))
 
 
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin-only: relay the rest of the message to every subscribed chat.
+
+    Permission is granted only to chat ids listed in
+    :attr:`Settings.admin_chat_ids`. Without that allow-list configured,
+    the command is silently inert (no-op for non-admins).
+    """
+    chat = _resolve_chat(update, context)
+    if chat is None or update.effective_message is None:
+        return
+    bot_ctx = _ctx(context)
+
+    if chat.chat_id not in bot_ctx.settings.admin_chat_ids:
+        # Quiet permission_denied: don't leak that the command exists to
+        # ordinary users. We *do* tell the caller something so an admin
+        # debugging a misconfigured ADMIN_CHAT_IDS sees what's going on.
+        await update.effective_message.reply_text(t("permission_denied", chat.language))
+        return
+
+    # Use ``message.text`` directly so the original whitespace and HTML
+    # markup (e.g. ``<b>`` from Telegram's formatting toolbar) survive
+    # intact. Strip the leading "/broadcast" (and optional "@botname")
+    # plus exactly one whitespace, leaving the rest as the user typed it.
+    full = (update.effective_message.text or "").lstrip()
+    if full.lower().startswith("/broadcast"):
+        body = full.split(maxsplit=1)
+        payload = body[1] if len(body) > 1 else ""
+    else:
+        payload = " ".join(context.args or [])
+    payload = payload.strip()
+
+    if not payload:
+        await update.effective_message.reply_text(t("broadcast_usage", chat.language))
+        return
+
+    from ..bot import broadcast_to_subscribers  # local import to break cycle
+
+    bot_ctx_state = bot_ctx.state
+    subscribed = bot_ctx_state.list_subscribed_chats()
+    if not subscribed:
+        await update.effective_message.reply_text(
+            t("broadcast_no_subscribers", chat.language)
+        )
+        return
+
+    await update.effective_message.reply_text(
+        t("broadcast_started", chat.language, count=len(subscribed))
+    )
+    ok, total = await broadcast_to_subscribers(context, text=payload)
+    await update.effective_message.reply_text(
+        t(
+            "broadcast_done",
+            chat.language,
+            ok=ok,
+            total=total,
+            failed=total - ok,
+        )
+    )
+
+
 # Reverse mapping: persistent reply-button key → command handler.
 # Telegram delivers a tap on a reply button as an ordinary text message, so we
 # look up the canonical key via :func:`keyboards.match_reply_button` and

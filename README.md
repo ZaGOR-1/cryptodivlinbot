@@ -73,6 +73,10 @@ present). Defaults are sensible — the only required variable is
 | `BINANCE_BASE_URL` | `https://api.binance.com` | Binance fallback base URL. |
 | `HTTP_TIMEOUT_SEC` | `10` | HTTP request timeout. |
 | `LOG_LEVEL` | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
+| `BACKUP_DIR` | `backups` | Directory for rotated SQLite snapshots (created if missing). |
+| `BACKUP_INTERVAL_MIN` | `60` | How often the bot snapshots the SQLite DB. |
+| `BACKUP_RETENTION_COUNT` | `24` | Maximum number of snapshots to retain. |
+| `ADMIN_CHAT_IDS` | _(empty)_ | Comma-separated chat ids allowed to use `/broadcast`. |
 
 ## Commands
 
@@ -89,6 +93,7 @@ present). Defaults are sensible — the only required variable is
 | `/setlang <en\|uk\|ru>` | Set the chat language directly. |
 | `/setthreshold <percent>` | Override the spike threshold for this chat. |
 | `/ping` | Health check (`pong`). |
+| `/broadcast <text>` | **Admin only.** Send `<text>` (HTML allowed) to every subscribed chat. The chat id of the sender must appear in `ADMIN_CHAT_IDS`. |
 
 ## Project layout
 
@@ -122,6 +127,41 @@ pytest -q
 The codebase passes `mypy --strict`. The configuration lives in
 `pyproject.toml` under `[tool.mypy]` (`strict = true`,
 `warn_unused_ignores`, `warn_unreachable`, etc.).
+
+## Backups
+
+The bot snapshots its SQLite DB on a schedule using SQLite's online backup
+API (`Connection.backup`). Snapshots are written to `${BACKUP_DIR}` as
+`cryptodivlinbot-YYYYMMDDTHHMMSSZ.sqlite` (UTC), and the directory is
+auto-rotated to keep at most `BACKUP_RETENTION_COUNT` files.
+
+Defaults give you 24 hours of hourly history (`24 × 60 min`). To restore,
+stop the bot, copy a snapshot over the live DB (`cp backups/cryptodivlinbot-*.sqlite cryptodivlinbot.sqlite`), and start the
+bot again. Schemas are versioned via `PRAGMA user_version`, so a snapshot
+from an earlier release will be auto-migrated forward on the first start.
+
+For Docker deployments, snapshots land at `/data/backups` inside the
+container (also on the persistent volume) — see `BACKUP_DIR` in
+[`docker-compose.yml`](./docker-compose.yml).
+
+## Admin / `/broadcast`
+
+The `/broadcast <text>` command is restricted to chat ids listed in
+`ADMIN_CHAT_IDS`. When invoked it broadcasts the rest of the message
+(HTML formatting allowed) to every currently subscribed chat, with the
+same bounded-concurrency dispatch path that the periodic digest uses, and
+reports a `delivered N/M, failed K` summary back to the admin. Chats that
+have blocked the bot are auto-unsubscribed mid-broadcast.
+
+Find your numeric chat id by sending `/start` to
+[@userinfobot](https://t.me/userinfobot), then add it to `ADMIN_CHAT_IDS`:
+
+```env
+ADMIN_CHAT_IDS=123456789
+```
+
+Multiple admins are comma-separated. With `ADMIN_CHAT_IDS` empty (the
+default), `/broadcast` is fully disabled.
 
 ## Run with Docker
 

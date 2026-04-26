@@ -55,3 +55,37 @@ def test_non_numeric_threshold(monkeypatch):
     _set_env(monkeypatch, SPIKE_THRESHOLD_PCT="abc")
     with pytest.raises(ValueError, match="SPIKE_THRESHOLD_PCT"):
         Settings.from_env()
+
+
+def test_backup_defaults(monkeypatch):
+    _set_env(monkeypatch)
+    s = Settings.from_env()
+    assert s.backup_interval_min == 60
+    assert s.backup_retention_count == 24
+    # ``Path("backups")`` — the ``backups/`` directory next to the bot's CWD.
+    assert s.backup_dir.name == "backups"
+    assert s.admin_chat_ids == frozenset()
+
+
+def test_admin_chat_ids_parsing(monkeypatch):
+    _set_env(monkeypatch, ADMIN_CHAT_IDS=" 111, 222, -333 , ")
+    s = Settings.from_env()
+    assert s.admin_chat_ids == frozenset({111, 222, -333})
+
+
+def test_admin_chat_ids_rejects_garbage(monkeypatch):
+    _set_env(monkeypatch, ADMIN_CHAT_IDS="111,not-a-number")
+    with pytest.raises(ValueError, match="ADMIN_CHAT_IDS"):
+        Settings.from_env()
+
+
+def test_invalid_backup_interval(monkeypatch):
+    _set_env(monkeypatch, BACKUP_INTERVAL_MIN="0")
+    with pytest.raises(ValueError, match="BACKUP_INTERVAL_MIN"):
+        Settings.from_env()
+
+
+def test_invalid_backup_retention(monkeypatch):
+    _set_env(monkeypatch, BACKUP_RETENTION_COUNT="0")
+    with pytest.raises(ValueError, match="BACKUP_RETENTION_COUNT"):
+        Settings.from_env()

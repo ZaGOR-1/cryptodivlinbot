@@ -108,6 +108,10 @@ python -m cryptodivlinbot
 | `BINANCE_BASE_URL` | `https://api.binance.com` | Базовый URL для фолбека. |
 | `HTTP_TIMEOUT_SEC` | `10` | Таймаут HTTP-запросов. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
+| `BACKUP_DIR` | `backups` | Каталог для ротируемых снимков SQLite (создаётся автоматически). |
+| `BACKUP_INTERVAL_MIN` | `60` | Как часто создаётся снимок БД (мин). |
+| `BACKUP_RETENTION_COUNT` | `24` | Сколько снимков хранить. Старые удаляются. |
+| `ADMIN_CHAT_IDS` | _(пусто)_ | Список chat id админов (через запятую) для команды `/broadcast`. |
 
 > 💡 Если хотите более частые алерты для тестов — поставьте
 > `SPIKE_THRESHOLD_PCT=0.5` и `POLL_INTERVAL_SEC=30`. Только не забудьте
@@ -131,6 +135,7 @@ python -m cryptodivlinbot
 | `/setlang <en\|uk\|ru>` | Установить язык напрямую. |
 | `/setthreshold <percent>` | Свой порог скачка для этого чата (`0.1` – `100`). |
 | `/ping` | Проверка состояния — должен ответить `pong`. |
+| `/broadcast <текст>` | **Только для админов.** Рассылает `<текст>` (с HTML-разметкой) всем подписанным чатам. Доступна только chat id, перечисленным в `ADMIN_CHAT_IDS`. |
 
 ---
 
