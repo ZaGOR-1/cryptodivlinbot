@@ -1,7 +1,9 @@
 """Persistence layer tests."""
 from __future__ import annotations
 
-from cryptodivlinbot.state import State
+import sqlite3
+
+from cryptodivlinbot.state import SCHEMA_VERSION, State
 
 
 def test_chat_lifecycle(tmp_path):
@@ -91,3 +93,60 @@ def test_coin_meta_upsert(tmp_path):
     assert by_id["ethereum"]["rank"] == 2
     # Ordered by rank ascending
     assert [r["coin_id"] for r in rows] == ["bitcoin", "ethereum"]
+
+
+def test_schema_version_is_set_on_fresh_db(tmp_path):
+    state = State(tmp_path / "fresh.sqlite")
+    assert state.schema_version() == SCHEMA_VERSION
+    assert SCHEMA_VERSION >= 1
+
+
+def test_migrations_are_idempotent(tmp_path):
+    """Re-opening an already-migrated DB must not bump the version again."""
+    db_path = tmp_path / "stable.sqlite"
+    State(db_path).close()
+    second = State(db_path)
+    assert second.schema_version() == SCHEMA_VERSION
+
+
+def test_migrations_apply_to_legacy_unversioned_db(tmp_path):
+    """A pre-existing DB without ``user_version`` must be brought to current."""
+    db_path = tmp_path / "legacy.sqlite"
+    raw = sqlite3.connect(db_path)
+    try:
+        # Fresh empty DB has user_version=0 by default. No tables exist yet.
+        assert raw.execute("PRAGMA user_version").fetchone()[0] == 0
+    finally:
+        raw.close()
+    state = State(db_path)
+    assert state.schema_version() == SCHEMA_VERSION
+    # The migration should have created the chats table.
+    state.upsert_chat(42, default_language="en")
+    assert state.get_chat(42) is not None
+
+
+def test_last_alerts_unique_per_chat_and_coin(tmp_path):
+    """The cooldown table must allow exactly one row per (chat, coin)."""
+    state = State(tmp_path / "uniq.sqlite")
+    state.set_last_alert_ts(1, "bitcoin", 100.0)
+    state.set_last_alert_ts(1, "bitcoin", 200.0)  # overwrite, not duplicate
+    state.set_last_alert_ts(1, "ethereum", 150.0)
+    state.set_last_alert_ts(2, "bitcoin", 175.0)
+
+    assert state.get_last_alert_ts(1, "bitcoin") == 200.0
+    assert state.get_last_alert_ts(1, "ethereum") == 150.0
+    assert state.get_last_alert_ts(2, "bitcoin") == 175.0
+
+    # Also assert at the schema level: PRIMARY KEY on (chat_id, coin_id)
+    # means SQLite rejects a literal duplicate insert without ON CONFLICT.
+    raw = sqlite3.connect(tmp_path / "uniq.sqlite")
+    try:
+        raw.execute(
+            "INSERT INTO last_alerts (chat_id, coin_id, ts) VALUES (1, 'bitcoin', 1.0)"
+        )
+    except sqlite3.IntegrityError:
+        pass
+    else:  # pragma: no cover - regression
+        raise AssertionError("Duplicate (chat_id, coin_id) was accepted")
+    finally:
+        raw.close()

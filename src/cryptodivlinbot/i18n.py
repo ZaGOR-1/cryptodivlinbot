@@ -81,11 +81,11 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
         "digest_empty": "No coin data yet — please try again in a minute.",
         "digest_header": "📰 Crypto digest (last {window} min):",
         "spike_alert_up": (
-            "🚀 *{symbol}* ({name}) jumped *+{pct:.2f}%* in {window} min\n"
+            "🚀 <b>{symbol}</b> ({name}) jumped <b>+{pct:.2f}%</b> in {window} min\n"
             "Price: ${price}"
         ),
         "spike_alert_down": (
-            "📉 *{symbol}* ({name}) dropped *{pct:.2f}%* in {window} min\n"
+            "📉 <b>{symbol}</b> ({name}) dropped <b>{pct:.2f}%</b> in {window} min\n"
             "Price: ${price}"
         ),
         "digest_line": "{symbol}: ${price} ({pct_str} {window}m, {pct_24h_str} 24h)",
@@ -155,11 +155,11 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
         "digest_empty": "Даних ще немає — спробуйте за хвилину.",
         "digest_header": "📰 Крипто-дайджест (за останні {window} хв):",
         "spike_alert_up": (
-            "🚀 *{symbol}* ({name}) зросла на *+{pct:.2f}%* за {window} хв\n"
+            "🚀 <b>{symbol}</b> ({name}) зросла на <b>+{pct:.2f}%</b> за {window} хв\n"
             "Ціна: ${price}"
         ),
         "spike_alert_down": (
-            "📉 *{symbol}* ({name}) впала на *{pct:.2f}%* за {window} хв\n"
+            "📉 <b>{symbol}</b> ({name}) впала на <b>{pct:.2f}%</b> за {window} хв\n"
             "Ціна: ${price}"
         ),
         "digest_line": "{symbol}: ${price} ({pct_str} {window}хв, {pct_24h_str} 24г)",
@@ -229,11 +229,11 @@ TEXTS: Final[dict[str, dict[str, str]]] = {
         "digest_empty": "Данных ещё нет — попробуйте через минуту.",
         "digest_header": "📰 Крипто-дайджест (за последние {window} мин):",
         "spike_alert_up": (
-            "🚀 *{symbol}* ({name}) выросла на *+{pct:.2f}%* за {window} мин\n"
+            "🚀 <b>{symbol}</b> ({name}) выросла на <b>+{pct:.2f}%</b> за {window} мин\n"
             "Цена: ${price}"
         ),
         "spike_alert_down": (
-            "📉 *{symbol}* ({name}) упала на *{pct:.2f}%* за {window} мин\n"
+            "📉 <b>{symbol}</b> ({name}) упала на <b>{pct:.2f}%</b> за {window} мин\n"
             "Цена: ${price}"
         ),
         "digest_line": "{symbol}: ${price} ({pct_str} {window}мин, {pct_24h_str} 24ч)",
