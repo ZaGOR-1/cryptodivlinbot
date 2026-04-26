@@ -243,6 +243,26 @@ container restarts do not lose subscriptions or price history. The image
 runs as an unprivileged `app` user, declares a lightweight `HEALTHCHECK`,
 caps memory at 256 MB by default, and rotates JSON logs (10 MB × 5 files).
 
+The compose file also configures **automatic recovery** so a Python
+crash, OOM kill, daemon restart, or host reboot brings the bot back up
+without manual intervention:
+
+- `restart: unless-stopped` — Docker restarts the container after every
+  abnormal exit and after a daemon restart, but respects an explicit
+  `docker stop` / `docker compose down`.
+- `init: true` — `tini` runs as PID 1 so SIGTERM is forwarded to the
+  Python process and PTB can shut down gracefully (drain the JobQueue,
+  close the SQLite WAL).
+- `stop_grace_period: 30s` — gives PTB enough time to finish its
+  current poll cycle before Docker SIGKILLs it.
+
+You can verify the policy with:
+
+```bash
+docker inspect cryptodivlinbot --format '{{ .HostConfig.RestartPolicy.Name }}'
+# → unless-stopped
+```
+
 To stop and remove the container (volume kept):
 
 ```bash
@@ -254,6 +274,66 @@ To wipe state too:
 ```bash
 docker compose down -v
 ```
+
+## Run as a systemd service
+
+If you don't want Docker — e.g. a small VPS, a Raspberry Pi, or any
+host running systemd — the repo ships a hardened unit file at
+[`deploy/cryptodivlinbot.service`](deploy/cryptodivlinbot.service).
+It runs the bot under a dedicated unprivileged user, restarts it on
+every crash with a back-off, and applies a conservative sandbox
+(`ProtectSystem=strict`, `NoNewPrivileges`, syscall filters, etc.).
+
+Quick install (run on the target host):
+
+```bash
+# 1. Dedicated unprivileged user.
+sudo useradd --system --create-home --home-dir /var/lib/cryptodivlinbot \
+    --shell /usr/sbin/nologin cryptodivlinbot
+
+# 2. Clone and install into a venv owned by that user.
+sudo -u cryptodivlinbot bash -c '
+    cd /var/lib/cryptodivlinbot
+    git clone https://github.com/ZaGOR-1/cryptodivlinbot.git app
+    python3 -m venv app/.venv
+    app/.venv/bin/pip install -U pip
+    app/.venv/bin/pip install /var/lib/cryptodivlinbot/app
+    # Optional Sentry/GlitchTip:
+    # app/.venv/bin/pip install "/var/lib/cryptodivlinbot/app[monitoring]"
+'
+
+# 3. Drop your config (TELEGRAM_BOT_TOKEN at minimum) at /etc/cryptodivlinbot/env.
+sudo install -d -m 0750 -o cryptodivlinbot -g cryptodivlinbot /etc/cryptodivlinbot
+sudo install -m 0640 -o cryptodivlinbot -g cryptodivlinbot \
+    /var/lib/cryptodivlinbot/app/.env.example /etc/cryptodivlinbot/env
+sudoedit /etc/cryptodivlinbot/env
+
+# 4. Install + enable the unit.
+sudo install -m 0644 /var/lib/cryptodivlinbot/app/deploy/cryptodivlinbot.service \
+    /etc/systemd/system/cryptodivlinbot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now cryptodivlinbot
+```
+
+Day-to-day operation:
+
+```bash
+sudo systemctl status cryptodivlinbot     # health
+sudo journalctl -u cryptodivlinbot -f     # live logs (Ctrl+C to detach)
+sudo systemctl restart cryptodivlinbot    # safe rolling restart
+```
+
+The unit auto-restarts on any non-zero exit (`Restart=on-failure`,
+`RestartSec=10s`). If the bot crash-loops 5 times within 60 seconds,
+systemd gives up so the failure surfaces in `systemctl status` instead
+of churning silently — fix the underlying issue, then
+`sudo systemctl reset-failed cryptodivlinbot && sudo systemctl start cryptodivlinbot`.
+
+Backups land at `/var/lib/cryptodivlinbot/backups/` (the default
+`BACKUP_DIR`, relative to the unit's `WorkingDirectory`). Override
+`BACKUP_DIR=/var/lib/cryptodivlinbot/backups` in `/etc/cryptodivlinbot/env`
+if you want to make the path explicit, or repoint it at a separate
+volume.
 
 ## Continuous Integration
 

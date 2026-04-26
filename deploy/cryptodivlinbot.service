@@ -1,0 +1,117 @@
+# systemd service unit for cryptodivlinbot.
+#
+# Use this when you don't want Docker — e.g. on a VPS, Raspberry Pi, or
+# any machine running systemd. It restarts the bot on every kind of
+# crash with a small back-off, runs it under an unprivileged user, and
+# applies a conservative sandbox so a bug can't trash the host.
+#
+# --- Install ---
+#
+#   # 1. Create a dedicated unprivileged user.
+#   sudo useradd --system --create-home --home-dir /var/lib/cryptodivlinbot \
+#       --shell /usr/sbin/nologin cryptodivlinbot
+#
+#   # 2. Clone the repo and install into a venv owned by that user.
+#   sudo -u cryptodivlinbot bash -c '
+#       cd /var/lib/cryptodivlinbot
+#       git clone https://github.com/ZaGOR-1/cryptodivlinbot.git app
+#       python3 -m venv app/.venv
+#       app/.venv/bin/pip install -U pip
+#       app/.venv/bin/pip install /var/lib/cryptodivlinbot/app
+#       # Optional: add Sentry/GlitchTip integration.
+#       # app/.venv/bin/pip install "/var/lib/cryptodivlinbot/app[monitoring]"
+#   '
+#
+#   # 3. Drop your config (TELEGRAM_BOT_TOKEN etc.) at the path below.
+#   sudo install -d -m 0750 -o cryptodivlinbot -g cryptodivlinbot \
+#       /etc/cryptodivlinbot
+#   sudo install -m 0640 -o cryptodivlinbot -g cryptodivlinbot \
+#       .env.example /etc/cryptodivlinbot/env
+#   sudo "$EDITOR" /etc/cryptodivlinbot/env
+#
+#   # 4. Install + enable the unit (this file).
+#   sudo install -m 0644 deploy/cryptodivlinbot.service \
+#       /etc/systemd/system/cryptodivlinbot.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now cryptodivlinbot
+#
+# --- Operate ---
+#
+#   sudo systemctl status cryptodivlinbot     # health
+#   sudo journalctl -u cryptodivlinbot -f     # live logs
+#   sudo systemctl restart cryptodivlinbot    # safe rolling restart
+#
+# Crash recovery is automatic: any non-zero exit triggers ``Restart=on-failure``
+# with a 10-second back-off, capped at 5 restarts in 60 seconds. If the
+# bot truly cannot start, systemd stops trying and surfaces the failure
+# in ``systemctl status`` instead of looping forever.
+
+[Unit]
+Description=cryptodivlinbot - top-N crypto price-spike Telegram bot
+Documentation=https://github.com/ZaGOR-1/cryptodivlinbot
+# Postpone start until network is ready so the first Telegram poll
+# doesn't spuriously fail.
+After=network-online.target
+Wants=network-online.target
+# Crash-loop guard: if the unit hits 5 ``Restart=`` events within 60
+# seconds, systemd stops trying so the failure is visible in
+# ``systemctl status`` instead of silently churning. These two keys
+# live in [Unit] (not [Service]) on modern systemd.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=cryptodivlinbot
+Group=cryptodivlinbot
+
+# All runtime config (TELEGRAM_BOT_TOKEN, SENTRY_DSN, etc.) lives in
+# this file. ``-`` prefix means "don't fail if it's missing", but you
+# almost certainly want it present — TELEGRAM_BOT_TOKEN is required.
+EnvironmentFile=-/etc/cryptodivlinbot/env
+
+WorkingDirectory=/var/lib/cryptodivlinbot/app
+ExecStart=/var/lib/cryptodivlinbot/app/.venv/bin/python -m cryptodivlinbot
+
+# --- Auto-restart policy ---
+# Restart on any abnormal exit (crash, OOM kill, signal). Don't
+# restart when the operator explicitly stops the unit (``systemctl stop``).
+# The crash-loop guard (StartLimitIntervalSec / StartLimitBurst) lives
+# in [Unit] above.
+Restart=on-failure
+RestartSec=10s
+
+# Graceful shutdown: SIGINT mirrors what PTB expects from a Ctrl+C, so
+# Application.run_polling() drains its JobQueue and closes the SQLite
+# WAL cleanly. SIGTERM is sent automatically if SIGINT doesn't finish
+# within TimeoutStopSec.
+KillSignal=SIGINT
+TimeoutStopSec=30s
+
+# --- Sandbox ---
+# These are conservative defaults for a Python bot that needs HTTPS
+# out and a SQLite file under its home directory. Loosen if you add
+# features that need more capabilities.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# The bot needs to write the SQLite DB and rotated backups under its
+# home directory. Whitelist that path explicitly while ProtectSystem
+# remains "strict".
+ReadWritePaths=/var/lib/cryptodivlinbot
+
+[Install]
+WantedBy=multi-user.target

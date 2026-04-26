@@ -436,3 +436,35 @@ schema upgrade-safe.
 - `pyproject.toml` declares the `monitoring` extras and a
   `[[tool.mypy.overrides]]` block for `sentry_sdk*` so strict type
   checking still passes when the optional dependency isn't installed.
+
+### Added (Auto-restart for crash recovery)
+- **Hardened `docker-compose.yml`**: keeps `restart: unless-stopped`
+  (Docker auto-recovers from process crashes, OOM kills, daemon
+  restarts, and host reboots while still respecting an explicit
+  `docker stop`), and adds `init: true` so `tini` runs as PID 1 and
+  forwards SIGTERM to the Python process — letting PTB shut down
+  gracefully (drain the JobQueue, close the SQLite WAL) instead of
+  being SIGKILL'd. `stop_grace_period: 30s` gives PTB enough headroom
+  to complete the in-flight poll cycle before Docker tears it down.
+- **`deploy/cryptodivlinbot.service`**: a hardened systemd unit for
+  bare-metal / VPS / Raspberry Pi deploys without Docker. Runs the bot
+  under a dedicated unprivileged `cryptodivlinbot` user with a strong
+  sandbox (`ProtectSystem=strict`, `ProtectHome`, `NoNewPrivileges`,
+  `SystemCallFilter=@system-service ~@privileged @resources`,
+  `PrivateTmp`, `PrivateDevices`, `LockPersonality`, etc.). Auto-restart
+  is wired with `Restart=on-failure`, `RestartSec=10s`, and a
+  crash-loop guard (`StartLimitBurst=5` within
+  `StartLimitIntervalSec=60`) so a misconfigured deploy fails loudly
+  in `systemctl status` instead of churning silently. `KillSignal=SIGINT`
+  + `TimeoutStopSec=30s` mirror PTB's expected graceful-shutdown signal.
+  Inline install instructions in the unit file's header comment cover
+  user creation, venv install, env file path (`/etc/cryptodivlinbot/env`),
+  and `systemctl enable --now`.
+- **README + USAGE_UK + USAGE_RU**: new "Run as a systemd service"
+  section in README, expanded "What's in docker-compose.yml" sections
+  in both translations to call out the new keys (`init`, `stop_grace_period`)
+  and explain why `unless-stopped` is preferred over `always`.
+
+### Notes
+- No Python source / dependency changes — this is an ops-only PR.
+  All 143 tests still pass; `ruff` and `mypy --strict` remain green.
